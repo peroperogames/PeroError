@@ -1,0 +1,23 @@
+{
+  "name": "com.prpr.error",
+  "displayName": "PeroError",
+  "version": "0.0.1",
+  "unity": "2019.4",
+  "description": "An error handle extension package for Unity",
+  "documentationUrl": "https://git.peropero.net/unity-packages/pero-error/-/blob/master/README.md",
+  "changelogUrl": "https://git.peropero.net/unity-packages/pero-error/-/releases",
+  "dependencies": {},
+  "keywords": [
+    "error",
+    "error-handling"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://git.peropero.net/unity-packages/pero-error"
+  },
+  "author": {
+    "name": "peropero",
+    "email": "unity@peropero.net"
+  },
+  "type": "tool"
+}
