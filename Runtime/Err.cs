@@ -9,15 +9,18 @@ namespace PeroTools2.Error
     [PublicAPI]
     public static class Err
     {
+        /// <summary>
+        /// 创建<see cref="Err{TKind}"/>实例
+        /// </summary>
         [NotNull]
         public static Err<TKind> New<TKind>(
-            TKind kind, string msg, IErr causedBy, Exception exception,
+            TKind kind, string message, IErr causedBy, Exception exception,
             [CallerMemberName] [CanBeNull] string callerMemberName = null,
             [CallerFilePath] [CanBeNull] string callerFilePath = null,
             [CallerLineNumber] int callerLineNumber = default
         ) where TKind : struct, Enum =>
             new Err<TKind>(
-                kind, msg, causedBy, exception,
+                kind, message, causedBy, exception,
                 new CallerInfo(callerMemberName, callerFilePath, callerLineNumber)
             );
     }
@@ -25,59 +28,54 @@ namespace PeroTools2.Error
     [PublicAPI]
     public class Err<TKind> : IErr where TKind : struct, Enum
     {
+        /// <summary>当前错误对应的错误枚举</summary>
         public virtual TKind kind { get; }
+
+        /// <inheritdoc cref="IErr.causedBy"/>
         public virtual IErr causedBy { get; }
+
+        /// <inheritdoc cref="IErr.message"/>
         public virtual string message { get; }
+
+        /// <inheritdoc cref="IErr.exception"/>
         public virtual Exception exception { get; }
 
+        /// <inheritdoc cref="IErr.notes"/>
         public Lazy<IList<string>> notes { get; } = new Lazy<IList<string>>(() => new List<string>(5));
 
-        protected string m_CallerMemberName;
-        protected string m_CallerFilePath;
-        protected int m_CallerLineNumber;
+        protected readonly string m_CallerMemberName;
+        protected readonly string m_CallerFilePath;
+        protected readonly int m_CallerLineNumber;
 
-        public Err(
-            TKind kind, string msg, IErr causedBy, Exception exception,
-            [CallerMemberName] [CanBeNull] string callerMemberName = null,
-            [CallerFilePath] [CanBeNull] string callerFilePath = null,
-            [CallerLineNumber] int callerLineNumber = default
-        )
+        /// <summary>
+        /// 不应该直接使用.<br/>
+        /// 当用于新建错误时，应当使用<see cref="Err.New{TKind}"/>代替
+        /// </summary>
+        public Err(TKind kind, string message, IErr causedBy, Exception exception, CallerInfo callerInfo)
         {
             this.kind = kind;
-            message = msg;
+            this.message = message;
             this.causedBy = causedBy;
             this.exception = exception;
 
-            m_CallerFilePath = callerFilePath;
-            m_CallerLineNumber = callerLineNumber;
-            m_CallerMemberName = callerMemberName;
+            m_CallerFilePath = callerInfo.callerFilePath;
+            m_CallerLineNumber = callerInfo.callerLineNumber;
+            m_CallerMemberName = callerInfo.callerMemberName;
         }
 
-        public Err(TKind kind, string msg, IErr causedBy, Exception exception, CallerInfo callerInfo)
-            : this(
-                kind, msg, causedBy, exception,
-                // ReSharper disable ExplicitCallerInfoArgument
-                callerInfo.callerMemberName,
-                callerInfo.callerFilePath,
-                callerInfo.callerLineNumber
-                // ReSharper restore ExplicitCallerInfoArgument
-            )
-        {
-        }
-
+        /// <summary>
+        /// 快捷的将<see cref="Err{TKind}"/>转换为错误枚举的对应伴生类(如果有)
+        /// </summary>
         [NotNull]
         public TErr CastTo<TErr>() where TErr : Err<TKind> => (TErr)this;
 
-        /// <summary>
-        /// 将该Err当作无法恢复的错误抛出(模仿Panic)
-        /// </summary>
-        /// <remarks>直接throw exception会导致堆栈丢失</remarks>
-        public virtual Exception Panic() => throw new ManualPanicException(message, exception);
+        /// <inheritdoc cref="IErr.Panic"/>
+        public virtual Exception Panic()
+            // 直接throw exception会导致堆栈丢失
+            => throw new ManualPanicException(message, exception);
 
-        /// <summary>
-        /// 检查该错误是否是由异常引发的
-        /// </summary>
-        public bool CausedByException([CanBeNull] out Exception ex)
+        /// <inheritdoc cref="IErr.CausedByException"/>
+        public bool CausedByException(out Exception ex)
         {
             IErr current = this;
             while (current != null)
@@ -93,8 +91,10 @@ namespace PeroTools2.Error
             return false;
         }
 
+        /// <inheritdoc cref="IErr.WriteToStringBuilder"/>
         public virtual void WriteToStringBuilder([NotNull] StringBuilder sb)
         {
+            // 后续可以替换成PeroString拼接
             sb.AppendFormat("{0}.{1}\n", typeof(TKind).FullName, kind);
             sb.AppendFormat("  At: {0} @ {1}:{2}\n", m_CallerMemberName, m_CallerFilePath, m_CallerLineNumber);
             sb.AppendFormat("  Message: {0}\n", message);
@@ -108,11 +108,7 @@ namespace PeroTools2.Error
                 }
             }
             // Exception
-            if (exception == null)
-            {
-                sb.AppendLine("  Exception: null");
-            }
-            else
+            if (exception != null)
             {
                 sb.AppendLine("  Exception:");
                 sb.AppendLine("========== Exception Start ==========");

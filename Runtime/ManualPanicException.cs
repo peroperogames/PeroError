@@ -10,7 +10,7 @@ namespace PeroTools2.Error
     public class ManualPanicException : Exception
     {
         public ManualPanicException(string msg, [CanBeNull] Exception innerEx = null)
-            : base(msg, innerEx)
+            : base($"Manual Panic Occured By: {msg}", innerEx)
         {
         }
     }

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using JetBrains.Annotations;
 
 namespace PeroTools2.Error
@@ -22,16 +21,27 @@ namespace PeroTools2.Error
 
         // Err => Result<T>
         public static implicit operator Result<TErrKind>(Err<TErrKind> err) => Fail(err);
+
+        public void UnWarp([CanBeNull] string msg = null)
+        {
+            if (!isOK) throw new ManualPanicException(msg);
+        }
+
+        [NotNull]
+        public override string ToString() =>
+            isOK
+                ? $"Result<{typeof(TErrKind).Name}>.OK()"
+                : $"Result<{typeof(TErrKind).Name}>.Fail:\n{err}";
     }
 
     [PublicAPI]
-    public readonly struct Result<T, TErrKind> : IEquatable<Result<T, TErrKind>> where TErrKind : struct, Enum
+    public readonly struct Result<T, TErrKind> where TErrKind : struct, Enum
     {
         private readonly T m_Value;
 
         public T value => isOK
             ? m_Value
-            : throw new ManualPanicException("Access Value From A Failed Result");
+            : throw new InvalidOperationException("Access Value From A Failed Result");
 
         public Err<TErrKind> err { get; }
 
@@ -59,6 +69,12 @@ namespace PeroTools2.Error
         // Err => Result<T>
         public static implicit operator Result<T, TErrKind>(Err<TErrKind> err) => Fail(err);
 
+        [NotNull]
+        public override string ToString() =>
+            isOK
+                ? $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.OK({value.ToString()})"
+                : $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.Fail:\n{err}";
+
         #region Fluent
 
         public T UnWarp([CanBeNull] string msg = null) => isOK
@@ -77,32 +93,6 @@ namespace PeroTools2.Error
         public Result<TR, TErrKind> Map<TR>(Func<T, TR> mapFunc) => isOK
             ? Result<TR, TErrKind>.OK(mapFunc.Invoke(value))
             : Result<TR, TErrKind>.Fail(err);
-
-        #endregion
-
-        [NotNull]
-        public override string ToString() =>
-            isOK
-                ? $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.OK({value.ToString()})"
-                : $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.Fail:\n{err}";
-
-        #region Equals
-
-        public bool Equals(Result<T, TErrKind> other)
-            => EqualityComparer<T>.Default.Equals(m_Value, other.m_Value) && Equals(err, other.err);
-
-        public override bool Equals(object obj) => obj is Result<T, TErrKind> other && Equals(other);
-
-        public override int GetHashCode()
-        {
-            unchecked
-            {
-                return (EqualityComparer<T>.Default.GetHashCode(m_Value) * 397) ^ (err != null ? err.GetHashCode() : 0);
-            }
-        }
-
-        public static bool operator ==(Result<T, TErrKind> left, Result<T, TErrKind> right) => left.Equals(right);
-        public static bool operator !=(Result<T, TErrKind> left, Result<T, TErrKind> right) => !left.Equals(right);
 
         #endregion
     }
