@@ -1,4 +1,11 @@
-﻿using System;
+﻿/*
+ * Copyright (c) PeroPeroGames Co., Ltd.
+ * Author: AidenMX
+ * Created On: 2023/09/11
+ * Description: Err Class
+ */
+
+using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -10,13 +17,26 @@ namespace PeroTools2.Error
     public static class Err
     {
         /// <summary>
-        /// 创建<see cref="Err{TKind}"/>实例
+        /// 创建<see cref="Err{TKind}"/>实例.<br/>
+        /// 如果错误枚举定义有伴生类, 则应该调用伴生类的构造方法而不是此方法
         /// </summary>
+        /// <typeparam name="TKind">错误枚举类型</typeparam>
+        /// <param name="kind">错误枚举值</param>
+        /// <param name="message">错误消息</param>
+        /// <param name="causedBy">造成本错误的错误. 如果本错误就是源头, 则填null</param>
+        /// <param name="exception">造成本错误的异常. 如果本错误不是由异常造成的, 则填null</param>
+        /// <param name="callerMemberName">不用填. 由编译器生成</param>
+        /// <param name="callerFilePath">不用填. 由编译器生成</param>
+        /// <param name="callerLineNumber">不用填. 由编译器生成</param>
+        /// <remarks>
+        /// 本方法应该用于直接创建新错误.
+        /// 如果需要对Err的创建进行包装, 则应该使用<see cref="Err{TKind}"/>的构造函数并正确传入<see cref="CallerInfo"/>来确保调用方信息正确.
+        /// </remarks>
         [NotNull]
         public static Err<TKind> New<TKind>(
             TKind kind, string message, IErr causedBy, Exception exception,
-            [CallerMemberName] [CanBeNull] string callerMemberName = null,
-            [CallerFilePath] [CanBeNull] string callerFilePath = null,
+            [CallerMemberName] string callerMemberName = null,
+            [CallerFilePath] string callerFilePath = null,
             [CallerLineNumber] int callerLineNumber = default
         ) where TKind : struct, Enum =>
             new Err<TKind>(
@@ -70,9 +90,8 @@ namespace PeroTools2.Error
         public TErr CastTo<TErr>() where TErr : Err<TKind> => (TErr)this;
 
         /// <inheritdoc cref="IErr.Panic"/>
-        public virtual Exception Panic()
-            // 直接throw exception会导致堆栈丢失
-            => throw new ManualPanicException(message, exception);
+        public virtual Exception Panic() // 直接throw exception会导致堆栈丢失
+            => throw new ManualPanicException(ToString());
 
         /// <inheritdoc cref="IErr.CausedByException"/>
         public bool CausedByException(out Exception ex)

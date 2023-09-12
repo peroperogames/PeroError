@@ -1,4 +1,11 @@
-﻿using System;
+﻿/*
+ * Copyright (c) PeroPeroGames Co., Ltd.
+ * Author: AidenMX
+ * Created On: 2023/09/11
+ * Description: ErrClass Attribute
+ */
+
+using System;
 using JetBrains.Annotations;
 
 namespace PeroTools2.Error

@@ -1,4 +1,11 @@
-﻿using System;
+﻿/*
+ * Copyright (c) PeroPeroGames Co., Ltd.
+ * Author: AidenMX
+ * Created On: 2023/09/11
+ * Description: IErr Interface
+ */
+
+using System;
 using System.Collections.Generic;
 using System.Text;
 using JetBrains.Annotations;

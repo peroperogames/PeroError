@@ -1,4 +1,11 @@
-﻿using System;
+﻿/*
+ * Copyright (c) PeroPeroGames Co., Ltd.
+ * Author: AidenMX
+ * Created On: 2023/09/11
+ * Description: Result Type For C#
+ */
+
+using System;
 using JetBrains.Annotations;
 
 namespace PeroTools2.Error
@@ -22,9 +29,10 @@ namespace PeroTools2.Error
         // Err => Result<T>
         public static implicit operator Result<TErrKind>(Err<TErrKind> err) => Fail(err);
 
-        public void UnWarp([CanBeNull] string msg = null)
+        public void UnWarp()
         {
-            if (!isOK) throw new ManualPanicException(msg);
+            // 如果!isOK则err一定不为null
+            if (!isOK) throw new InvalidOperationException($"Call UnWarp From A Failed Result, Err: {err}");
         }
 
         [NotNull]
@@ -77,12 +85,12 @@ namespace PeroTools2.Error
 
         #region Fluent
 
-        public T UnWarp([CanBeNull] string msg = null) => isOK
+        public T UnWarp() => isOK
             ? value
-            : throw new ManualPanicException(msg);
+            // 如果!isOK则err一定不为null
+            : throw new InvalidOperationException($"Call UnWarp From A Failed Result, Err: {err}");
 
-        [CanBeNull]
-        public T ValueOrDefault([CanBeNull] T @default = default) => isOK ? value : default;
+        public T ValueOrDefault([CanBeNull] T @default = default) => isOK ? value : @default;
 
         public T ValueOr(Func<Err<TErrKind>, T> whenFailed) => isOK ? value : whenFailed.Invoke(err);
 

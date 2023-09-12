@@ -1,4 +1,11 @@
-﻿using System;
+﻿/*
+ * Copyright (c) PeroPeroGames Co., Ltd.
+ * Author: AidenMX
+ * Created On: 2023/09/11
+ * Description: ManualPanicException
+ */
+
+using System;
 using JetBrains.Annotations;
 
 namespace PeroTools2.Error
@@ -9,8 +16,7 @@ namespace PeroTools2.Error
     [PublicAPI]
     public class ManualPanicException : Exception
     {
-        public ManualPanicException(string msg, [CanBeNull] Exception innerEx = null)
-            : base($"Manual Panic Occured By: {msg}", innerEx)
+        public ManualPanicException([NotNull] string message) : base(message)
         {
         }
     }
