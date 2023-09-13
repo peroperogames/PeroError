@@ -60,7 +60,7 @@ namespace PeroTools2.Error.Test.Editor
             Assert.That(successStr, Does.Contain(nameof(TestErrKind)));
             Assert.That(successStr, Does.Contain("Success"));
             // ReSharper disable once PossibleNullReferenceException
-            Assert.That(failedStr, Does.Contain(m_FailedResult.err.message));
+            Assert.That(failedStr, Does.Contain(m_FailedResult.err.kind.ToString()));
         }
 
         [Test]
@@ -68,21 +68,24 @@ namespace PeroTools2.Error.Test.Editor
         {
             // UnWarp
             Assert.That(m_SuccessResult.UnWarp(), Is.SameAs(success_message));
-            Assert.Throws<InvalidOperationException>(() =>
+            Assert.Throws<ManualPanicException>(() =>
             {
                 string _ = m_FailedResult.UnWarp();
             });
         }
 
-        [Test]
-        public void Test_ValueOr()
+        [TestCase("Default")]
+        [TestCase(default(string))]
+        public void Test_ValueOr(string defaultValue)
         {
-            Assert.That(m_SuccessResult.ValueOrDefault("Default"), Is.SameAs(success_message));
+            Assert.That(m_SuccessResult.ValueOrDefault(), Is.SameAs(success_message));
             Assert.That(m_FailedResult.ValueOrDefault(), Is.SameAs(default(string)));
-            Assert.That(m_FailedResult.ValueOrDefault("Default"), Is.SameAs("Default"));
 
-            Assert.That(m_SuccessResult.ValueOr(_ => "Default"), Is.SameAs(success_message));
-            Assert.That(m_FailedResult.ValueOr(err => err.message), Is.SameAs(failed_message));
+            Assert.That(m_SuccessResult.ValueOrDefault(defaultValue), Is.SameAs(success_message));
+            Assert.That(m_FailedResult.ValueOrDefault(defaultValue), Is.SameAs(defaultValue));
+
+            Assert.That(m_SuccessResult.ValueOr(_ => defaultValue), Is.SameAs(success_message));
+            Assert.That(m_FailedResult.ValueOr(_ => defaultValue), Is.SameAs(defaultValue));
         }
     }
 }

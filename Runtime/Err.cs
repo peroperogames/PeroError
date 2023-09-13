@@ -60,8 +60,7 @@ namespace PeroTools2.Error
         /// <inheritdoc cref="IErr.exception"/>
         public virtual Exception exception { get; }
 
-        /// <inheritdoc cref="IErr.notes"/>
-        public Lazy<IList<string>> notes { get; } = new Lazy<IList<string>>(() => new List<string>(5));
+        protected Lazy<IList<string>> notes { get; } = new Lazy<IList<string>>(() => new List<string>(5));
 
         protected readonly string m_CallerMemberName;
         protected readonly string m_CallerFilePath;
@@ -71,7 +70,7 @@ namespace PeroTools2.Error
         /// 不应该直接使用.<br/>
         /// 当用于新建错误时，应当使用<see cref="Err.New{TKind}"/>代替
         /// </summary>
-        public Err(TKind kind, string message, IErr causedBy, Exception exception, CallerInfo callerInfo)
+        internal Err(TKind kind, string message, IErr causedBy, Exception exception, CallerInfo callerInfo)
         {
             this.kind = kind;
             this.message = message;
@@ -90,11 +89,10 @@ namespace PeroTools2.Error
         public TErr CastTo<TErr>() where TErr : Err<TKind> => (TErr)this;
 
         /// <inheritdoc cref="IErr.Panic"/>
-        public virtual Exception Panic() // 直接throw exception会导致堆栈丢失
-            => throw new ManualPanicException(ToString());
+        public virtual Exception Panic() => new ManualPanicException(ToString()); // 直接throw exception会导致堆栈丢失
 
         /// <inheritdoc cref="IErr.CausedByException"/>
-        public bool CausedByException(out Exception ex)
+        public virtual bool CausedByException(out Exception ex)
         {
             IErr current = this;
             while (current != null)
@@ -109,6 +107,8 @@ namespace PeroTools2.Error
             ex = null;
             return false;
         }
+
+        public void AddNote(string note) => notes.Value.Add(note);
 
         /// <inheritdoc cref="IErr.WriteToStringBuilder"/>
         public virtual void WriteToStringBuilder([NotNull] StringBuilder sb)
@@ -132,6 +132,7 @@ namespace PeroTools2.Error
                 sb.AppendLine("  Exception:");
                 sb.AppendLine("========== Exception Start ==========");
                 sb.AppendLine(exception.ToString());
+                // Exception 内部可能有用的信息(Exception.ToString()会打印Message和StackTrace)：
                 // sb.AppendFormat("  ExMessage: {0}\n", exception.Message);
                 // sb.AppendFormat("  TargetSite: {0}\n", exception.TargetSite);
                 // sb.AppendFormat("  Source: {0}\n", exception.Source);

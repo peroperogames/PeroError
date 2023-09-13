@@ -6,7 +6,6 @@
  */
 
 using System;
-using System.Collections.Generic;
 using System.Text;
 using JetBrains.Annotations;
 
@@ -27,34 +26,21 @@ namespace PeroTools2.Error
         [CanBeNull]
         Exception exception { get; }
 
-        /// <summary>用于更好的描述当前错误的附加信息</summary>
-        Lazy<IList<string>> notes { get; }
-
-        /// <summary>将当前错误当作不可恢复错误抛出, 抛出<see cref="ManualPanicException"/></summary>
-        Exception Panic();
+        /// <summary>向当前错误添加附加信息，来更好的描述当前错误</summary>
+        void AddNote(string note);
 
         /// <summary>
-        /// 查询错误链上是否有异常.
+        /// 将当前错误当作不可恢复错误, 返回<see cref="ManualPanicException"/>, 需要手动抛出<br/>
+        /// 使用方法：<c>throw err.Panic();</c><br/>
         /// </summary>
+        /// <remarks>需要手动抛出主要是为了能让C#识别到代码路径中断，同时能让堆栈少一层</remarks>
+        Exception Panic();
+
+        /// <summary>查询错误链上是否有异常.</summary>
         /// <param name="ex">如果有异常, 则返回</param>
         bool CausedByException([CanBeNull] out Exception ex);
 
-        /// <summary>
-        /// 格式化自身并写入StringBuilder
-        /// </summary>
+        /// <summary>格式化自身并写入StringBuilder</summary>
         void WriteToStringBuilder(StringBuilder sb);
-    }
-
-    public static class ErrExtensions
-    {
-        /// <summary>向Err添加额外信息，会在打印该错误时一并输出</summary>
-        /// <returns>返回自身来允许链式调用</returns>
-        [PublicAPI]
-        [NotNull]
-        public static TErr AddNote<TErr>([NotNull] this TErr err, string note) where TErr : IErr
-        {
-            err.notes.Value.Add(note);
-            return err;
-        }
     }
 }

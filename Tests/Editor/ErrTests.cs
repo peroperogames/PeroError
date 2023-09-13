@@ -6,6 +6,7 @@
  */
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using NUnit.Framework;
@@ -29,6 +30,7 @@ namespace PeroTools2.Error.Test.Editor
         private FieldInfo m_CallerFilePathField;
         private FieldInfo m_CallerLineNumberField;
         private FieldInfo m_ExceptionField;
+        private FieldInfo m_NotesField;
 
         private (string memberName, string filePath, int lineNum) m_LineInfo; // 创建m_Err那一行的行信息
 
@@ -42,11 +44,13 @@ namespace PeroTools2.Error.Test.Editor
             m_CallerFilePathField = type.GetField("m_CallerFilePath", flags);
             m_CallerLineNumberField = type.GetField("m_CallerLineNumber", flags);
             m_ExceptionField = type.GetField("<exception>k__BackingField", flags);
+            m_NotesField = type.GetField("<notes>k__BackingField", flags);
 
             Assert.That(m_CallerMemberNameField, Is.Not.Null);
             Assert.That(m_CallerFilePathField, Is.Not.Null);
             Assert.That(m_CallerLineNumberField, Is.Not.Null);
             Assert.That(m_ExceptionField, Is.Not.Null);
+            Assert.That(m_NotesField, Is.Not.Null);
         }
 
         [SetUp]
@@ -87,7 +91,6 @@ namespace PeroTools2.Error.Test.Editor
         public void Test_ManualPanic()
         {
             Assert.Catch<ManualPanicException>(() => throw m_Err.Panic());
-            Assert.Catch<ManualPanicException>(() => m_Err.Panic());
         }
 
         [Test]
@@ -105,16 +108,21 @@ namespace PeroTools2.Error.Test.Editor
         [Test]
         public void Test_Note()
         {
-            Assert.That(m_Err.notes.IsValueCreated, Is.False);
-            m_Err.AddNote("note1").AddNote("note2");
-            Assert.That(m_Err.notes.IsValueCreated, Is.True);
-            Assert.That(m_Err.notes.Value, Is.EquivalentTo(new[] { "note1", "note2" }));
+            Assert.That(GetNotes(m_Err).IsValueCreated, Is.False);
+            m_Err.AddNote("note1");
+            m_Err.AddNote("note2");
+            Assert.That(GetNotes(m_Err).IsValueCreated, Is.True);
+            Assert.That(GetNotes(m_Err).Value, Is.EquivalentTo(new[] { "note1", "note2" }));
+            return;
+
+            Lazy<IList<string>> GetNotes(Err<TestErrKind> err) => (Lazy<IList<string>>)m_NotesField.GetValue(err);
         }
 
         [Test]
         public void Test_ToString()
         {
-            m_Err.AddNote("note1").AddNote("note2");
+            m_Err.AddNote("note1");
+            m_Err.AddNote("note2");
             string str = m_Err.ToString();
             Assert.That(str, Does.Contain(m_Err.kind.ToString()));
 
