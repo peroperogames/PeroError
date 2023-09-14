@@ -2,7 +2,7 @@
  * Copyright (c) PeroPeroGames Co., Ltd.
  * Author: AidenMX
  * Created On: 2023/09/11
- * Description: IErr Interface
+ * Description: Err BaseClass
  */
 
 using System;
@@ -26,9 +26,6 @@ namespace PeroTools2.Error
         [CanBeNull]
         public abstract Exception exception { get; }
 
-        /// <summary>向当前错误添加附加信息，来更好的描述当前错误</summary>
-        protected internal abstract void AddNote(string note);
-
         /// <summary>
         /// 将当前错误当作不可恢复错误, 返回<see cref="ManualPanicException"/>, 需要手动抛出<br/>
         /// 使用方法：<c>throw err.Panic();</c><br/>
@@ -42,6 +39,9 @@ namespace PeroTools2.Error
 
         /// <summary>格式化自身并写入StringBuilder</summary>
         protected internal abstract void WriteToStringBuilder(StringBuilder sb);
+
+        /// <summary>向当前错误添加附加信息，来更好的描述当前错误</summary>
+        protected internal abstract void AddNote(string note);
     }
 
     public static class ErrBaseExtensions
