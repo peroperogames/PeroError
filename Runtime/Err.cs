@@ -34,7 +34,7 @@ namespace PeroTools2.Error
         /// </remarks>
         [NotNull]
         public static Err<TKind> New<TKind>(
-            TKind kind, string message, IErr causedBy, Exception exception,
+            TKind kind, string message, ErrBase causedBy, Exception exception,
             [CallerMemberName] string callerMemberName = null,
             [CallerFilePath] string callerFilePath = null,
             [CallerLineNumber] int callerLineNumber = default
@@ -46,21 +46,21 @@ namespace PeroTools2.Error
     }
 
     [PublicAPI]
-    public class Err<TKind> : IErr where TKind : struct, Enum
+    public class Err<TKind> : ErrBase where TKind : struct, Enum
     {
         /// <summary>当前错误对应的错误枚举</summary>
         public virtual TKind kind { get; }
 
-        /// <inheritdoc cref="IErr.causedBy"/>
-        public virtual IErr causedBy { get; }
+        /// <inheritdoc cref="ErrBase.causedBy"/>
+        public override ErrBase causedBy { get; }
 
-        /// <inheritdoc cref="IErr.message"/>
-        public virtual string message { get; }
+        /// <inheritdoc cref="ErrBase.message"/>
+        public override string message { get; }
 
-        /// <inheritdoc cref="IErr.exception"/>
-        public virtual Exception exception { get; }
+        /// <inheritdoc cref="ErrBase.exception"/>
+        public override Exception exception { get; }
 
-        protected Lazy<IList<string>> notes { get; } = new Lazy<IList<string>>(() => new List<string>(5));
+        private Lazy<IList<string>> notes { get; } = new Lazy<IList<string>>(() => new List<string>(5));
 
         protected readonly string m_CallerMemberName;
         protected readonly string m_CallerFilePath;
@@ -70,7 +70,7 @@ namespace PeroTools2.Error
         /// 不应该直接使用.<br/>
         /// 当用于新建错误时，应当使用<see cref="Err.New{TKind}"/>代替
         /// </summary>
-        internal Err(TKind kind, string message, IErr causedBy, Exception exception, CallerInfo callerInfo)
+        protected internal Err(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
         {
             this.kind = kind;
             this.message = message;
@@ -88,13 +88,13 @@ namespace PeroTools2.Error
         [NotNull]
         public TErr CastTo<TErr>() where TErr : Err<TKind> => (TErr)this;
 
-        /// <inheritdoc cref="IErr.Panic"/>
-        public virtual Exception Panic() => new ManualPanicException(ToString()); // 直接throw exception会导致堆栈丢失
+        /// <inheritdoc cref="ErrBase.Panic"/>
+        public override Exception Panic() => new ManualPanicException(ToString()); // 直接throw exception会导致堆栈丢失
 
-        /// <inheritdoc cref="IErr.CausedByException"/>
-        public virtual bool CausedByException(out Exception ex)
+        /// <inheritdoc cref="ErrBase.CausedByException"/>
+        public override bool CausedByException(out Exception ex)
         {
-            IErr current = this;
+            ErrBase current = this;
             while (current != null)
             {
                 if (current.exception != null)
@@ -108,10 +108,11 @@ namespace PeroTools2.Error
             return false;
         }
 
-        public void AddNote(string note) => notes.Value.Add(note);
+        /// <inheritdoc cref="ErrBase.AddNote"/>
+        protected internal override void AddNote(string note) => notes.Value.Add(note);
 
-        /// <inheritdoc cref="IErr.WriteToStringBuilder"/>
-        public virtual void WriteToStringBuilder([NotNull] StringBuilder sb)
+        /// <inheritdoc cref="ErrBase.WriteToStringBuilder"/>
+        protected internal override void WriteToStringBuilder([NotNull] StringBuilder sb)
         {
             // 后续可以替换成PeroString拼接
             sb.AppendFormat("{0}.{1}\n", typeof(TKind).FullName, kind);

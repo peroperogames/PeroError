@@ -109,8 +109,7 @@ namespace PeroTools2.Error.Test.Editor
         public void Test_Note()
         {
             Assert.That(GetNotes(m_Err).IsValueCreated, Is.False);
-            m_Err.AddNote("note1");
-            m_Err.AddNote("note2");
+            m_Err.AddNote("note1").AddNote("note2");
             Assert.That(GetNotes(m_Err).IsValueCreated, Is.True);
             Assert.That(GetNotes(m_Err).Value, Is.EquivalentTo(new[] { "note1", "note2" }));
             return;
@@ -121,8 +120,7 @@ namespace PeroTools2.Error.Test.Editor
         [Test]
         public void Test_ToString()
         {
-            m_Err.AddNote("note1");
-            m_Err.AddNote("note2");
+            m_Err.AddNote("note1").AddNote("note2");
             string str = m_Err.ToString();
             Assert.That(str, Does.Contain(m_Err.kind.ToString()));
 

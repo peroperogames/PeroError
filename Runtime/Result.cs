@@ -42,7 +42,7 @@ namespace PeroTools2.Error
         public static implicit operator Result<TErrKind>(Err<TErrKind> err) => Fail(err);
 
         /// <summary>
-        /// 断言Result一定成功. 如果不成功则触发<see cref="IErr.Panic"/>
+        /// 断言Result一定成功. 如果不成功则触发<see cref="ErrBase.Panic"/>
         /// </summary>
         /// <exception cref="ManualPanicException">当在一个失败的Result上调用时抛出</exception>
         public void UnWarp()
@@ -113,7 +113,7 @@ namespace PeroTools2.Error
         /// <summary>
         /// 断言Result一定成功.
         /// 如果成功返回结果,
-        /// 如果不成功则触发<see cref="IErr.Panic"/>
+        /// 如果不成功则触发<see cref="ErrBase.Panic"/>
         /// </summary>
         /// <exception cref="ManualPanicException">当在一个失败的Result上调用时抛出</exception>
         public T UnWarp() => isOK
