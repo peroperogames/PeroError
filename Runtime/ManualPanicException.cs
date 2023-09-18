@@ -6,6 +6,7 @@
  */
 
 using System;
+using System.Runtime.Serialization;
 using JetBrains.Annotations;
 
 namespace PeroTools2.Error
@@ -14,9 +15,14 @@ namespace PeroTools2.Error
     /// 代表一次手动Panic
     /// </summary>
     [PublicAPI]
+    [Serializable]
     public class ManualPanicException : Exception
     {
         public ManualPanicException([NotNull] string message) : base(message)
+        {
+        }
+
+        protected ManualPanicException(SerializationInfo info, StreamingContext context) : base(info, context)
         {
         }
     }
