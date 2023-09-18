@@ -11,7 +11,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using NUnit.Framework;
 
-namespace PeroTools2.Error.Test.Editor
+namespace PeroTools2.Error.Tests.Editor
 {
     internal enum TestErrKind
     {

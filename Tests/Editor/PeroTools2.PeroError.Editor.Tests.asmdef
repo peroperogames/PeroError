@@ -1,6 +1,6 @@
 {
     "name": "PeroTools2.PeroError.Editor.Tests",
-    "rootNamespace": "PeroTools2.Error.Test.Editor",
+    "rootNamespace": "PeroTools2.Error.Tests.Editor",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

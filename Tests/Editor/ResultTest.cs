@@ -8,7 +8,7 @@
 using System;
 using NUnit.Framework;
 
-namespace PeroTools2.Error.Test.Editor
+namespace PeroTools2.Error.Tests.Editor
 {
     [TestFixture]
     [TestOf(typeof(Result<>))]
