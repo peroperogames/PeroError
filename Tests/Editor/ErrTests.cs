@@ -26,11 +26,9 @@ namespace PeroTools2.Error.Tests.Editor
     {
         private Err<TestErrKind> m_Err;
 
-        private FieldInfo m_CallerMemberNameField;
-        private FieldInfo m_CallerFilePathField;
-        private FieldInfo m_CallerLineNumberField;
         private FieldInfo m_ExceptionField;
         private FieldInfo m_NotesField;
+        private FieldInfo m_StackTrace;
 
         private (string memberName, string filePath, int lineNum) m_LineInfo; // 创建m_Err那一行的行信息
 
@@ -40,17 +38,13 @@ namespace PeroTools2.Error.Tests.Editor
             var type = typeof(Err<TestErrKind>);
             const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
-            m_CallerMemberNameField = type.GetField("m_CallerMemberName", flags);
-            m_CallerFilePathField = type.GetField("m_CallerFilePath", flags);
-            m_CallerLineNumberField = type.GetField("m_CallerLineNumber", flags);
             m_ExceptionField = type.GetField("<exception>k__BackingField", flags);
             m_NotesField = type.GetField("<notes>k__BackingField", flags);
+            m_StackTrace = type.GetField("stackTrace", flags);
 
-            Assert.That(m_CallerMemberNameField, Is.Not.Null);
-            Assert.That(m_CallerFilePathField, Is.Not.Null);
-            Assert.That(m_CallerLineNumberField, Is.Not.Null);
             Assert.That(m_ExceptionField, Is.Not.Null);
             Assert.That(m_NotesField, Is.Not.Null);
+            Assert.That(m_StackTrace, Is.Not.Null);
         }
 
         [SetUp]
@@ -58,16 +52,16 @@ namespace PeroTools2.Error.Tests.Editor
         {
             // high => mid => low => Exception
             var exception = CreateExceptionWithStackTrace("PanicTest"); // 创建带堆栈的Ex
-            var lowErr = Err.New(TestErrKind.LowLevel, "Root Cause", null, exception);
-            var midErr = Err.New(TestErrKind.MidLevel, "Mid Level Err Occurred", lowErr, null);
-            var highErr = Err.New(TestErrKind.HighLevel, "High Level Err Occurred", midErr, null);
+            var lowErr = exception.Warp(TestErrKind.LowLevel, "Root Cause");
+            var midErr = lowErr.Warp(TestErrKind.MidLevel, "Mid Level Err Occurred");
+            var highErr = midErr.Warp(TestErrKind.HighLevel, "High Level Err Occurred");
             m_LineInfo = GetCurrentLineInfo(); // 拿到highErr创建的那行的信息
             m_LineInfo.lineNum -= 1;
             m_Err = highErr;
         }
 
         [Test]
-        public void Test_KindAndCausedBy()
+        public void KindAndCausedByTest()
         {
             Assert.That(m_Err.kind == TestErrKind.HighLevel);
             Assert.That(m_Err.causedBy is Err<TestErrKind> midErr && midErr.kind == TestErrKind.MidLevel);
@@ -77,7 +71,7 @@ namespace PeroTools2.Error.Tests.Editor
         }
 
         [Test]
-        public void Test_CausedByException()
+        public void CausedByExceptionTest()
         {
             Assert.That(m_Err.CausedByException(out var ex), Is.True);
             Assert.That(ex, Is.InstanceOf<ManualPanicException>());
@@ -88,17 +82,20 @@ namespace PeroTools2.Error.Tests.Editor
         }
 
         [Test]
-        public void Test_ManualPanic()
+        public void ManualPanicTest()
         {
             Assert.Catch<ManualPanicException>(() => throw m_Err.Panic());
         }
 
         [Test]
-        public void Test_CallerInfo()
+        public void CallerInfoTest()
         {
-            string callerMemberName = (string)m_CallerMemberNameField.GetValue(m_Err);
-            string callerFilePath = (string)m_CallerFilePathField.GetValue(m_Err);
-            int callerLineNumber = (int)m_CallerLineNumberField.GetValue(m_Err);
+            var stackTrace = (List<CallerInfo>)m_StackTrace.GetValue(m_Err);
+            Assert.That(stackTrace, Has.Count.EqualTo(1));
+
+            string callerMemberName = stackTrace[0].callerMemberName;
+            string callerFilePath = stackTrace[0].callerFilePath;
+            int callerLineNumber = stackTrace[0].callerLineNumber;
 
             Assert.That(callerMemberName == m_LineInfo.memberName && !string.IsNullOrWhiteSpace(callerMemberName));
             Assert.That(callerFilePath == m_LineInfo.filePath && !string.IsNullOrWhiteSpace(callerFilePath));
@@ -106,7 +103,7 @@ namespace PeroTools2.Error.Tests.Editor
         }
 
         [Test]
-        public void Test_Note()
+        public void NoteTest()
         {
             Assert.That(GetNotes(m_Err).IsValueCreated, Is.False);
             m_Err.AddNote("note1").AddNote("note2");
@@ -118,7 +115,7 @@ namespace PeroTools2.Error.Tests.Editor
         }
 
         [Test]
-        public void Test_ToString()
+        public void ToStringTest()
         {
             m_Err.AddNote("note1").AddNote("note2");
             string str = m_Err.ToString();

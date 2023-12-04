@@ -23,18 +23,18 @@ namespace PeroTools2.Error.Tests.Editor
         public void Setup()
         {
             m_SuccessResult = success_message;
-            m_FailedResult = Err.New(TestErrKind.HighLevel, failed_message, null, null);
+            m_FailedResult = Err.New(TestErrKind.HighLevel, failed_message);
         }
 
         [Test]
-        public void Test_IsOK()
+        public void IsOKTest()
         {
             Assert.That(m_SuccessResult.isOK, Is.True);
             Assert.That(m_FailedResult.isOK, Is.False);
         }
 
         [Test]
-        public void Test_GetValue()
+        public void GetValueTest()
         {
             Assert.That(m_SuccessResult.value, Is.EqualTo("Success"));
             Assert.Throws<InvalidOperationException>(() =>
@@ -44,14 +44,14 @@ namespace PeroTools2.Error.Tests.Editor
         }
 
         [Test]
-        public void Test_Error()
+        public void ErrorTest()
         {
             Assert.That(m_SuccessResult.err, Is.Null);
             Assert.That(m_FailedResult.err, Is.InstanceOf<Err<TestErrKind>>());
         }
 
         [Test]
-        public void Test_ToString()
+        public void ToStringTest()
         {
             string successStr = m_SuccessResult.ToString();
             string failedStr = m_FailedResult.ToString();
@@ -64,7 +64,7 @@ namespace PeroTools2.Error.Tests.Editor
         }
 
         [Test]
-        public void Test_UnWarp()
+        public void UnWarpTest()
         {
             // UnWarp
             Assert.That(m_SuccessResult.UnWarp(), Is.SameAs(success_message));
@@ -76,7 +76,7 @@ namespace PeroTools2.Error.Tests.Editor
 
         [TestCase("Default")]
         [TestCase(default(string))]
-        public void Test_ValueOr(string defaultValue)
+        public void ValueOrTest(string defaultValue)
         {
             Assert.That(m_SuccessResult.ValueOrDefault(), Is.SameAs(success_message));
             Assert.That(m_FailedResult.ValueOrDefault(), Is.SameAs(default(string)));
