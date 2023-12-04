@@ -23,8 +23,6 @@ namespace PeroTools2.Error
         /// <typeparam name="TKind">错误枚举类型</typeparam>
         /// <param name="kind">错误枚举值</param>
         /// <param name="message">错误消息</param>
-        /// <param name="causedBy">造成本错误的错误. 如果本错误就是源头, 则填null</param>
-        /// <param name="exception">造成本错误的异常. 如果本错误不是由异常造成的, 则填null</param>
         /// <param name="callerMemberName">不用填. 由编译器生成</param>
         /// <param name="callerFilePath">不用填. 由编译器生成</param>
         /// <param name="callerLineNumber">不用填. 由编译器生成</param>
@@ -34,13 +32,76 @@ namespace PeroTools2.Error
         /// </remarks>
         [NotNull]
         public static Err<TKind> New<TKind>(
-            TKind kind, string message, ErrBase causedBy, Exception exception,
+            TKind kind, string message,
             [CallerMemberName] string callerMemberName = null,
             [CallerFilePath] string callerFilePath = null,
             [CallerLineNumber] int callerLineNumber = default
         ) where TKind : struct, Enum =>
             new Err<TKind>(
-                kind, message, causedBy, exception,
+                kind, message, null, null,
+                new CallerInfo(callerMemberName, callerFilePath, callerLineNumber)
+            );
+
+        /// <summary>
+        /// 将一个底层错误包装为新的错误.
+        /// </summary>
+        /// <typeparam name="TKind">错误枚举类型</typeparam>
+        /// <param name="causedBy">被包装的底层错误</param>
+        /// <param name="kind">错误枚举值</param>
+        /// <param name="message">错误消息</param>
+        /// <param name="callerMemberName">不用填. 由编译器生成</param>
+        /// <param name="callerFilePath">不用填. 由编译器生成</param>
+        /// <param name="callerLineNumber">不用填. 由编译器生成</param>
+        public static Err<TKind> Warp<TKind>(
+            this ErrBase causedBy, TKind kind, string message,
+            [CallerMemberName] string callerMemberName = null,
+            [CallerFilePath] string callerFilePath = null,
+            [CallerLineNumber] int callerLineNumber = default
+        ) where TKind : struct, Enum =>
+            new Err<TKind>(
+                kind, message, causedBy, null,
+                new CallerInfo(callerMemberName, callerFilePath, callerLineNumber)
+            );
+
+        /// <summary>
+        /// 将一个底层错误包装为新的错误, 但依然使用旧的ErrKind和Message.
+        /// </summary>
+        /// <typeparam name="TKind">错误枚举类型</typeparam>
+        /// <param name="causedBy">被包装的底层错误</param>
+        /// <param name="callerMemberName">不用填. 由编译器生成</param>
+        /// <param name="callerFilePath">不用填. 由编译器生成</param>
+        /// <param name="callerLineNumber">不用填. 由编译器生成</param>
+        public static Err<TKind> Warp<TKind>(
+            this Err<TKind> causedBy,
+            [CallerMemberName] string callerMemberName = null,
+            [CallerFilePath] string callerFilePath = null,
+            [CallerLineNumber] int callerLineNumber = default
+        ) where TKind : struct, Enum
+        {
+            causedBy.AddStackTrace(new CallerInfo(callerMemberName, callerFilePath, callerLineNumber));
+            return causedBy;
+        }
+
+        // TODO 伴生类自动检测，自动构造，参数怎么传进来？
+
+        /// <summary>
+        /// 将一个Exception包装为新的错误.
+        /// </summary>
+        /// <typeparam name="TKind">错误枚举类型</typeparam>
+        /// <param name="ex">被包装的底层异常</param>
+        /// <param name="kind">错误枚举值</param>
+        /// <param name="message">错误消息</param>
+        /// <param name="callerMemberName">不用填. 由编译器生成</param>
+        /// <param name="callerFilePath">不用填. 由编译器生成</param>
+        /// <param name="callerLineNumber">不用填. 由编译器生成</param>
+        public static Err<TKind> Warp<TKind>(
+            this Exception ex, TKind kind, string message,
+            [CallerMemberName] string callerMemberName = null,
+            [CallerFilePath] string callerFilePath = null,
+            [CallerLineNumber] int callerLineNumber = default
+        ) where TKind : struct, Enum =>
+            new Err<TKind>(
+                kind, message, null, ex,
                 new CallerInfo(callerMemberName, callerFilePath, callerLineNumber)
             );
     }
@@ -62,9 +123,8 @@ namespace PeroTools2.Error
 
         private Lazy<IList<string>> notes { get; } = new Lazy<IList<string>>(() => new List<string>(5));
 
-        protected readonly string m_CallerMemberName;
-        protected readonly string m_CallerFilePath;
-        protected readonly int m_CallerLineNumber;
+        /// <summary>使用CallerInfo模拟StackTrace</summary>
+        protected readonly List<CallerInfo> stackTrace;
 
         /// <summary>
         /// 不应该直接使用.<br/>
@@ -76,10 +136,12 @@ namespace PeroTools2.Error
             this.message = message;
             this.causedBy = causedBy;
             this.exception = exception;
+            stackTrace = new List<CallerInfo>(1) { callerInfo };
+        }
 
-            m_CallerFilePath = callerInfo.callerFilePath;
-            m_CallerLineNumber = callerInfo.callerLineNumber;
-            m_CallerMemberName = callerInfo.callerMemberName;
+        protected internal void AddStackTrace(CallerInfo callerInfo)
+        {
+            stackTrace.Add(callerInfo);
         }
 
         /// <summary>
@@ -116,7 +178,11 @@ namespace PeroTools2.Error
         {
             // 后续可以替换成PeroString拼接
             sb.AppendFormat("{0}.{1}\n", typeof(TKind).FullName, kind);
-            sb.AppendFormat("  At: {0} @ {1}:{2}\n", m_CallerMemberName, m_CallerFilePath, m_CallerLineNumber);
+            for (int i = stackTrace.Count - 1; i >= 0; i--)
+            {
+                var callerInfo = stackTrace[i];
+                sb.AppendFormat("  At: {0} @ {1}:{2}\n", callerInfo.callerMemberName, callerInfo.callerFilePath, callerInfo.callerLineNumber.ToString());
+            }
             sb.AppendFormat("  Message: {0}\n", message);
             // Notes
             if (notes.IsValueCreated)
@@ -124,7 +190,7 @@ namespace PeroTools2.Error
                 sb.AppendLine("  Notes:");
                 for (int i = 0; i < notes.Value.Count; i++)
                 {
-                    sb.AppendFormat("    {0}: {1}\n", i, notes.Value[i]);
+                    sb.AppendFormat("    {0}: {1}\n", i.ToString(), notes.Value[i]);
                 }
             }
             // Exception
