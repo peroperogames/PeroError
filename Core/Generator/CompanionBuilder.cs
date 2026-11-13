@@ -19,7 +19,7 @@ namespace PeroTools2.Error.Generator;
 internal static class CompanionBuilder
 {
     /// <summary>Parameter names reserved by the companion class; [ErrArg] cannot use them</summary>
-    private static readonly HashSet<string> s_reservedArgumentNames = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> s_ReservedArgumentNames = new(StringComparer.Ordinal)
     {
         "msg",
         "causedBy",
@@ -270,7 +270,7 @@ internal static class CompanionBuilder
                 continue;
             }
 
-            if (s_reservedArgumentNames.Contains(rawName))
+            if (s_ReservedArgumentNames.Contains(rawName))
             {
                 diagnostics.Add(new CompanionDiagnostic(Diagnostics.reservedArgumentName, location, rawName));
                 continue;

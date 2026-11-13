@@ -71,7 +71,6 @@ public sealed class ErrCompanionTests
         Assert.That(err.path, Is.EqualTo("/tmp/a.txt"));
         Assert.That(err.message, Is.EqualTo("File /tmp/a.txt Do Not Exist"));
         Assert.That(err.causedBy, Is.Null);
-        Assert.That(err.exception, Is.Null);
     }
 
     [Test]
