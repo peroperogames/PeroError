@@ -1,0 +1,17 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <DebugType>portable</DebugType>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Company>PeroPeroGames</Company>
+    <Authors>peropero</Authors>
+    <Product>PeroError</Product>
+    <Version>0.2.0</Version>
+    <UnityTargetFramework>netstandard2.0</UnityTargetFramework>
+    <!-- This file is under Core/, while Unity/Plugins is at the repository root, so go up one level -->
+    <UnityPluginsDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\Unity\Plugins'))</UnityPluginsDir>
+  </PropertyGroup>
+
+</Project>
