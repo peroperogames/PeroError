@@ -40,16 +40,16 @@ namespace PeroTools2.Error.Generator;
 public sealed class PeroErrorGenerator : ISourceGenerator
 {
     /// <summary>Generator name, written into the generated code's [GeneratedCode] attribute</summary>
-    public const string GeneratorName = "PeroTools2.PeroError.Generator";
+    public const string generator_name = "PeroTools2.PeroError.Generator";
 
     /// <summary>Fully qualified metadata name of ErrMsgAttribute</summary>
-    public const string ErrMsgAttributeMetadataName = "PeroTools2.Error.ErrMsgAttribute";
+    public const string err_msg_attribute_metadata_name = "PeroTools2.Error.ErrMsgAttribute";
 
     /// <summary>Fully qualified metadata name of ErrArgAttribute</summary>
-    public const string ErrArgAttributeMetadataName = "PeroTools2.Error.ErrArgAttribute";
+    public const string err_arg_attribute_metadata_name = "PeroTools2.Error.ErrArgAttribute";
 
     /// <summary>Generator version, written into the generated code's [GeneratedCode] attribute</summary>
-    public static readonly string GeneratorVersion =
+    public static readonly string generatorVersion =
         typeof(PeroErrorGenerator).Assembly.GetName().Version?.ToString() ?? "0.0.0";
 
     /// <inheritdoc />

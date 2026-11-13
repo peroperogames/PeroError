@@ -17,7 +17,7 @@ namespace PeroTools2.Error.Analyzers;
 internal sealed class ResultTypeInfo
 {
     /// <summary>Maximum wrapper depth, so that pathological types cannot expand forever</summary>
-    private const int MaxWrapperDepth = 8;
+    private const int max_wrapper_depth = 8;
 
     private readonly ImmutableArray<INamedTypeSymbol> m_Definitions;
 
@@ -51,7 +51,7 @@ internal sealed class ResultTypeInfo
         result = null;
 
         var current = type;
-        for (int depth = 0; depth < MaxWrapperDepth; depth++)
+        for (int depth = 0; depth < max_wrapper_depth; depth++)
         {
             if (current is not INamedTypeSymbol named)
             {

@@ -6,7 +6,6 @@
  */
 
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
@@ -22,14 +21,14 @@ namespace PeroTools2.Error.Tests;
 [TestOf(typeof(PeroErrorGenerator))]
 public sealed class ErrCompanionGeneratorTests
 {
-    private const string Header = "using PeroTools2.Error;\n";
+    private const string header = "using PeroTools2.Error;\n";
 
     private static readonly ImmutableArray<MetadataReference> s_References = CreateReferences();
 
     [Test]
     public void GeneratesCompanionClassTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""File {path} Do Not Exist"")]
@@ -53,7 +52,7 @@ public enum IOErr
     [Test]
     public void GeneratesInternalClassForInternalEnumTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 internal enum IOKind
 {
     [ErrMsg(""io failed"")]
@@ -67,7 +66,7 @@ internal enum IOKind
     [Test]
     public void GeneratesOneFilePerMemberTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""a"")]
@@ -88,7 +87,7 @@ public enum IOErr
     [Test]
     public void SupportsAlignmentAndFormatSpecifierTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""[{name,6}][{value:F3}]"")]
@@ -105,7 +104,7 @@ public enum IOErr
     [Test]
     public void SupportsEscapedBracesTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""json {{ no close"")]
@@ -120,10 +119,10 @@ public enum IOErr
     [Test]
     public void SupportsCustomClassNameTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
-    [ErrMsg(""custom {v}"", Name = ""MyCompanion"")]
+    [ErrMsg(""custom {v}"", name = ""MyCompanion"")]
     [ErrArg(""v"", typeof(int))]
     Custom,
 }");
@@ -136,7 +135,7 @@ public enum IOErr
     [Test]
     public void SupportsKeywordArgumentNameTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""event {event}"")]
@@ -153,7 +152,7 @@ public enum IOErr
     [Test]
     public void SupportsGlobalNamespaceEnumTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum GlobalEnum
 {
     [ErrMsg(""g {v}"")]
@@ -170,7 +169,7 @@ public enum GlobalEnum
     [Test]
     public void GeneratedErrorBehavesLikeErrTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""File {path} Do Not Exist"")]
@@ -193,7 +192,7 @@ public enum IOErr
     [Test]
     public void MessageOverrideAndCallerInfoTest()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""default {path}"")]
@@ -217,7 +216,7 @@ public enum IOErr
     [Test]
     public void UnknownPlaceholderReportsPERR002Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""File {path} Do Not Exist"")]
@@ -231,7 +230,7 @@ public enum IOErr
     [Test]
     public void UnbalancedBraceReportsPERR001Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""File {path Do Not Exist"")]
@@ -246,7 +245,7 @@ public enum IOErr
     [Test]
     public void ExpressionInPlaceholderReportsPERR003Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""File {path.ToUpper()} Do Not Exist"")]
@@ -261,7 +260,7 @@ public enum IOErr
     [Test]
     public void DuplicateArgumentReportsPERR004Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""x {a}"")]
@@ -277,7 +276,7 @@ public enum IOErr
     [Test]
     public void ReservedArgumentNameReportsPERR005Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""x {msg}"")]
@@ -292,7 +291,7 @@ public enum IOErr
     [Test]
     public void InvalidArgumentNameReportsPERR006Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrMsg(""x"")]
@@ -307,7 +306,7 @@ public enum IOErr
     [Test]
     public void NameConflictReportsPERR008Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public sealed class IOErr_NotFound { }
 
 public enum IOErr
@@ -323,7 +322,7 @@ public enum IOErr
     [Test]
     public void NestedEnumReportsPERR009Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public static class Owner
 {
     public enum IOErr
@@ -340,7 +339,7 @@ public static class Owner
     [Test]
     public void ArgumentWithoutMessageReportsPERR010Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public enum IOErr
 {
     [ErrArg(""path"", typeof(string))]
@@ -355,7 +354,7 @@ public enum IOErr
     [Test]
     public void MessageOnPlainFieldReportsPERR011Test()
     {
-        var run = Run(Header + @"
+        var run = Run(header + @"
 public sealed class NotAnEnum
 {
     [ErrMsg(""x"")]
@@ -371,7 +370,7 @@ public sealed class NotAnEnum
     {
         // The generator is V1 (Unity's Roslyn 3.8 does not support incremental generators),
         // so this only confirms that repeated runs produce a stable result
-        var compilation = CreateCompilation(Header + @"
+        var compilation = CreateCompilation(header + @"
 public enum IOErr
 {
     [ErrMsg(""File {path}"")]

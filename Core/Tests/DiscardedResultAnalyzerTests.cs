@@ -21,7 +21,7 @@ namespace PeroTools2.Error.Tests;
 [TestOf(typeof(DiscardedResultAnalyzer))]
 public sealed class DiscardedResultAnalyzerTests
 {
-    private const string Prelude = @"using PeroTools2.Error;
+    private const string prelude = @"using PeroTools2.Error;
 
 public enum MyErr
 {
@@ -44,7 +44,7 @@ public static class Helper
 }
 ";
 
-    private const string UniTaskPrelude = @"
+    private const string uni_task_prelude = @"
 namespace Cysharp.Threading.Tasks
 {
     public struct UniTask<T>
@@ -109,7 +109,7 @@ public static class UniHelper
     public void ReportsDiscardedUniTaskTest()
     {
         // The UniTask assembly is not referenced by the analyzer, so it is recognized by name
-        var diagnostics = Run(Prelude + UniTaskPrelude + "public static class Subject { public static void Test() { UniHelper.GetUniTask(); } }");
+        var diagnostics = Run(prelude + uni_task_prelude + "public static class Subject { public static void Test() { UniHelper.GetUniTask(); } }");
 
         AssertIds(diagnostics, "PERR100");
     }
@@ -117,7 +117,7 @@ public static class UniHelper
     [Test]
     public void ReportsVoidExpressionBodiedMethodTest()
     {
-        var diagnostics = Run(Prelude + "public static class Subject { public static void Test() => Helper.DoWork(); }");
+        var diagnostics = Run(prelude + "public static class Subject { public static void Test() => Helper.DoWork(); }");
 
         AssertIds(diagnostics, "PERR100");
     }
@@ -175,7 +175,7 @@ if (!result.isOK)
     [Test]
     public void IgnoresWhenReturnedTest()
     {
-        var diagnostics = Run(Prelude + @"
+        var diagnostics = Run(prelude + @"
 public static class Subject
 {
     public static Result<MyErr> Test()
@@ -239,7 +239,7 @@ public static class Subject
     [Test]
     public void IgnoresPropertyExpressionBodyTest()
     {
-        var diagnostics = Run(Prelude + "public static class Subject { public static Result<MyErr> Value => Helper.DoWork(); }");
+        var diagnostics = Run(prelude + "public static class Subject { public static Result<MyErr> Value => Helper.DoWork(); }");
 
         AssertIds(diagnostics);
     }
@@ -280,7 +280,7 @@ err.AddNote(""note"");"));
     #region Utils
 
     private static string Source(string body) =>
-        Prelude + @"
+        prelude + @"
 public static class Subject
 {
     public static void Test()
@@ -290,7 +290,7 @@ public static class Subject
 }";
 
     private static string SourceAsync(string body) =>
-        Prelude + @"
+        prelude + @"
 public static class Subject
 {
     public static async System.Threading.Tasks.Task Test()

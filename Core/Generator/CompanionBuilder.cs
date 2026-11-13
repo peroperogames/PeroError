@@ -19,7 +19,7 @@ namespace PeroTools2.Error.Generator;
 internal static class CompanionBuilder
 {
     /// <summary>Parameter names reserved by the companion class; [ErrArg] cannot use them</summary>
-    private static readonly HashSet<string> s_ReservedArgumentNames = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> s_reservedArgumentNames = new(StringComparer.Ordinal)
     {
         "msg",
         "causedBy",
@@ -34,8 +34,8 @@ internal static class CompanionBuilder
     {
         var compilation = model.Compilation;
 
-        var messageAttribute = FindAttribute(field, compilation.GetTypeByMetadataName(PeroErrorGenerator.ErrMsgAttributeMetadataName));
-        var argumentAttributes = FindAttributes(field, compilation.GetTypeByMetadataName(PeroErrorGenerator.ErrArgAttributeMetadataName));
+        var messageAttribute = FindAttribute(field, compilation.GetTypeByMetadataName(PeroErrorGenerator.err_msg_attribute_metadata_name));
+        var argumentAttributes = FindAttributes(field, compilation.GetTypeByMetadataName(PeroErrorGenerator.err_arg_attribute_metadata_name));
 
         var fallbackLocation = GetFallbackLocation(field);
 
@@ -45,7 +45,7 @@ internal static class CompanionBuilder
             return messageAttribute == null
                 ? null
                 : CompanionModel.FromWarning(new CompanionDiagnostic(
-                    Diagnostics.MessageOnNonEnumField,
+                    Diagnostics.messageOnNonEnumField,
                     GetLocation(messageAttribute, ct) ?? fallbackLocation,
                     field.Name));
         }
@@ -59,7 +59,7 @@ internal static class CompanionBuilder
             }
 
             return CompanionModel.FromWarning(new CompanionDiagnostic(
-                Diagnostics.ArgumentWithoutMessage,
+                Diagnostics.argumentWithoutMessage,
                 GetLocation(argumentAttributes[0], ct) ?? fallbackLocation,
                 field.Name));
         }
@@ -91,15 +91,15 @@ internal static class CompanionBuilder
 
         if (string.IsNullOrEmpty(format))
         {
-            diagnostics.Add(new CompanionDiagnostic(Diagnostics.InvalidFormatString, location, "The message template cannot be empty"));
+            diagnostics.Add(new CompanionDiagnostic(Diagnostics.invalidFormatString, location, "The message template cannot be empty"));
         }
 
         if (enumSymbol.ContainingType != null)
         {
-            diagnostics.Add(new CompanionDiagnostic(Diagnostics.NestedEnumNotSupported, location, enumSymbol.Name));
+            diagnostics.Add(new CompanionDiagnostic(Diagnostics.nestedEnumNotSupported, location, enumSymbol.Name));
         }
 
-        var args = ReadArguments(argumentAttributes, compilation, fallbackLocation, ct, diagnostics, out var declaredNames);
+        var args = ReadArguments(argumentAttributes, fallbackLocation, ct, diagnostics, out var declaredNames);
         string className = ResolveClassName(messageAttribute, enumSymbol, field, location, diagnostics);
 
         CheckNameConflict(enumSymbol, className, compilation, location, diagnostics);
@@ -115,15 +115,15 @@ internal static class CompanionBuilder
             namespaceName = enumSymbol.ContainingNamespace.IsGlobalNamespace
                 ? null
                 : enumSymbol.ContainingNamespace.ToDisplayString(),
-            enumTypeName = enumSymbol.ToDisplayString(SymbolUtilities.TypeFormat),
+            enumTypeName = enumSymbol.ToDisplayString(SymbolUtilities.typeFormat),
             enumDisplayName = enumSymbol.ToDisplayString(),
             enumMemberName = SymbolUtilities.EscapeIdentifier(field.Name),
             className = SymbolUtilities.EscapeIdentifier(className),
             accessibility = enumSymbol.DeclaredAccessibility == Accessibility.Public ? "public" : "internal",
             args = args,
             interpolatedMessage = message,
-            generatorName = PeroErrorGenerator.GeneratorName,
-            generatorVersion = PeroErrorGenerator.GeneratorVersion,
+            generatorName = PeroErrorGenerator.generator_name,
+            generatorVersion = PeroErrorGenerator.generatorVersion,
         };
 
         string hintName = SymbolUtilities.SanitizeHintName(enumSymbol.ToDisplayString() + "." + field.Name) + ".g.cs";
@@ -168,7 +168,7 @@ internal static class CompanionBuilder
         string className = null;
         foreach (var named in messageAttribute.NamedArguments)
         {
-            if (named.Key == "Name" && named.Value.Value is string name && name.Length > 0)
+            if (named.Key == "name" && named.Value.Value is string name && name.Length > 0)
             {
                 className = name;
             }
@@ -181,7 +181,7 @@ internal static class CompanionBuilder
 
         if (!SymbolUtilities.IsValidIdentifierName(className))
         {
-            diagnostics.Add(new CompanionDiagnostic(Diagnostics.InvalidCompanionName, location, className));
+            diagnostics.Add(new CompanionDiagnostic(Diagnostics.invalidCompanionName, location, className));
         }
 
         return className;
@@ -204,7 +204,7 @@ internal static class CompanionBuilder
         string fullName = ns.IsGlobalNamespace ? className : ns.ToDisplayString() + "." + className;
         if (compilation.GetTypeByMetadataName(fullName) != null)
         {
-            diagnostics.Add(new CompanionDiagnostic(Diagnostics.CompanionNameConflict, location, className));
+            diagnostics.Add(new CompanionDiagnostic(Diagnostics.companionNameConflict, location, className));
         }
     }
 
@@ -242,7 +242,6 @@ internal static class CompanionBuilder
 
     private static List<CompanionArg> ReadArguments(
         List<AttributeData> attributes,
-        Compilation compilation,
         Location fallbackLocation,
         CancellationToken ct,
         ImmutableArray<CompanionDiagnostic>.Builder diagnostics,
@@ -267,26 +266,26 @@ internal static class CompanionBuilder
 
             if (!SymbolUtilities.IsValidIdentifierName(rawName))
             {
-                diagnostics.Add(new CompanionDiagnostic(Diagnostics.InvalidArgumentName, location, rawName ?? "<null>"));
+                diagnostics.Add(new CompanionDiagnostic(Diagnostics.invalidArgumentName, location, rawName ?? "<null>"));
                 continue;
             }
 
-            if (s_ReservedArgumentNames.Contains(rawName))
+            if (s_reservedArgumentNames.Contains(rawName))
             {
-                diagnostics.Add(new CompanionDiagnostic(Diagnostics.ReservedArgumentName, location, rawName));
+                diagnostics.Add(new CompanionDiagnostic(Diagnostics.reservedArgumentName, location, rawName));
                 continue;
             }
 
             if (!seenNames.Add(rawName))
             {
-                diagnostics.Add(new CompanionDiagnostic(Diagnostics.DuplicateArgumentName, location, rawName));
+                diagnostics.Add(new CompanionDiagnostic(Diagnostics.duplicateArgumentName, location, rawName));
                 continue;
             }
 
             var typeConstant = attribute.ConstructorArguments.Length > 1 ? attribute.ConstructorArguments[1] : default;
             if (!IsUsableParameterType(typeConstant.Value as ITypeSymbol))
             {
-                diagnostics.Add(new CompanionDiagnostic(Diagnostics.InvalidArgumentType, location, rawName));
+                diagnostics.Add(new CompanionDiagnostic(Diagnostics.invalidArgumentType, location, rawName));
                 continue;
             }
 
@@ -299,7 +298,7 @@ internal static class CompanionBuilder
             {
                 rawName = rawName,
                 emittedName = SymbolUtilities.EscapeIdentifier(rawName),
-                typeName = typeSymbol.ToDisplayString(SymbolUtilities.TypeFormat),
+                typeName = typeSymbol.ToDisplayString(SymbolUtilities.typeFormat),
                 comment = comment,
             });
         }

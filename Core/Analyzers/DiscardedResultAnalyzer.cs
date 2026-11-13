@@ -52,7 +52,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 {
     /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
-        ImmutableArray.Create(Diagnostics.DiscardedResult, Diagnostics.UnusedResultVariable);
+        ImmutableArray.Create(Diagnostics.discardedResult, Diagnostics.unusedResultVariable);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -189,7 +189,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             }
 
             context.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.UnusedResultVariable, declarator.Identifier.GetLocation(), local.Name));
+                Diagnostics.unusedResultVariable, declarator.Identifier.GetLocation(), local.Name));
         }
     }
 
@@ -249,7 +249,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         }
 
         context.ReportDiagnostic(Diagnostic.Create(
-            Diagnostics.DiscardedResult, expression.GetLocation(), DescribeExpression(expression)));
+            Diagnostics.discardedResult, expression.GetLocation(), DescribeExpression(expression)));
     }
 
     private static bool IsCallLike(ExpressionSyntax expression) => expression switch

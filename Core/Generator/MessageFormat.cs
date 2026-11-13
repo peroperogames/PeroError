@@ -54,7 +54,7 @@ internal static class MessageFormat
                 if (end < 0)
                 {
                     diagnostics.Add(new CompanionDiagnostic(
-                        Diagnostics.InvalidFormatString, location, "Missing '}' to match the '{'"));
+                        Diagnostics.invalidFormatString, location, "Missing '}' to match the '{'"));
                     return null;
                 }
 
@@ -62,7 +62,7 @@ internal static class MessageFormat
                 if (hole.IndexOf('{') >= 0)
                 {
                     diagnostics.Add(new CompanionDiagnostic(
-                        Diagnostics.InvalidFormatString, location, "A format item cannot contain a nested '{'"));
+                        Diagnostics.invalidFormatString, location, "A format item cannot contain a nested '{'"));
                     return null;
                 }
 
@@ -73,11 +73,11 @@ internal static class MessageFormat
                         break;
                     case HoleResult.UnknownName:
                         diagnostics.Add(new CompanionDiagnostic(
-                            Diagnostics.UnknownFormatArgument, location, badName));
+                            Diagnostics.unknownFormatArgument, location, badName));
                         return null;
                     default:
                         diagnostics.Add(new CompanionDiagnostic(
-                            Diagnostics.UnsupportedFormatExpression, location, hole.Trim()));
+                            Diagnostics.unsupportedFormatExpression, location, hole.Trim()));
                         return null;
                 }
 
@@ -96,7 +96,7 @@ internal static class MessageFormat
                 }
 
                 diagnostics.Add(new CompanionDiagnostic(
-                    Diagnostics.InvalidFormatString, location, "Unexpected '}'"));
+                    Diagnostics.invalidFormatString, location, "Unexpected '}'"));
                 return null;
             }
 

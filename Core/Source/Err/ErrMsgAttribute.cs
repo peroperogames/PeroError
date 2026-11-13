@@ -56,7 +56,7 @@ public sealed class ErrMsgAttribute : Attribute
     /// Defaults to <c>{error enum name}_{error enum field name}</c>.
     /// (Used by the generator only)
     /// </summary>
-    public string Name { get; set; }
+    public string? name { get; set; }
 
     /// <summary>Declares the default message template</summary>
     /// <param name="format">Default message template (interpolated string syntax)</param>

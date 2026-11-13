@@ -14,7 +14,7 @@ namespace PeroTools2.Error.Generator;
 internal static class SymbolUtilities
 {
     /// <summary>Type name format emitted into code: global:: prefix, keywords for built-in types</summary>
-    public static readonly SymbolDisplayFormat TypeFormat = new(
+    public static readonly SymbolDisplayFormat typeFormat = new(
         globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
         genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,

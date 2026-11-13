@@ -34,7 +34,7 @@ internal enum CompanionErrKind
     Keyword,
 
     /// <summary>Custom generated class name</summary>
-    [ErrMsg("custom named {value}", Name = nameof(CustomNamedCompanion))]
+    [ErrMsg("custom named {value}", name = nameof(CustomNamedCompanion))]
     [ErrArg("value", typeof(int), "Custom class name")]
     CustomNamed,
 }

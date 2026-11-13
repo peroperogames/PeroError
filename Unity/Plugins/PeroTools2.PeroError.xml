@@ -258,7 +258,7 @@
         <member name="P:PeroTools2.Error.ErrMsgAttribute.format">
             <summary>Default message template (interpolated string syntax)</summary>
         </member>
-        <member name="P:PeroTools2.Error.ErrMsgAttribute.Name">
+        <member name="P:PeroTools2.Error.ErrMsgAttribute.name">
             <summary>
             Custom name for the generated companion class.<br/>
             Defaults to <c>{error enum name}_{error enum field name}</c>.

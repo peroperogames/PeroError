@@ -12,8 +12,8 @@ namespace PeroTools2.Error.Generator;
 /// <summary>Emits a <see cref="CompanionSpec"/> as C# source code</summary>
 internal static class CompanionEmitter
 {
-    private const string RuntimeNamespace = "global::PeroTools2.Error";
-    private const int IndentSize = 4;
+    private const string runtime_namespace = "global::PeroTools2.Error";
+    private const int indent_size = 4;
 
     /// <summary>Generates the full source of the companion class from <paramref name="spec"/></summary>
     public static string Emit(CompanionSpec spec)
@@ -40,7 +40,7 @@ internal static class CompanionEmitter
             "[global::System.CodeDom.Compiler.GeneratedCodeAttribute(\"" + spec.generatorName + "\", \"" + spec.generatorVersion + "\")]");
         AppendLine(sb, indent, "[global::System.Diagnostics.DebuggerNonUserCodeAttribute]");
         AppendLine(sb, indent,
-            spec.accessibility + " sealed class " + spec.className + " : " + RuntimeNamespace + ".Err<" + spec.enumTypeName + ">");
+            spec.accessibility + " sealed class " + spec.className + " : " + runtime_namespace + ".Err<" + spec.enumTypeName + ">");
         AppendLine(sb, indent, "{");
 
         AppendArgs(sb, indent + 1, spec);
@@ -102,7 +102,7 @@ internal static class CompanionEmitter
             AppendLine(sb, indent + 1, arg.typeName + " " + arg.emittedName + ",");
         }
         AppendLine(sb, indent + 1, "string msg = null,");
-        AppendLine(sb, indent + 1, RuntimeNamespace + ".ErrBase causedBy = null,");
+        AppendLine(sb, indent + 1, runtime_namespace + ".ErrBase causedBy = null,");
         AppendLine(sb, indent + 1, "global::System.Exception ex = null,");
         AppendLine(sb, indent + 1, "[global::System.Runtime.CompilerServices.CallerMemberName] string callerMemberName = null,");
         AppendLine(sb, indent + 1, "[global::System.Runtime.CompilerServices.CallerFilePath] string callerFilePath = null,");
@@ -114,7 +114,7 @@ internal static class CompanionEmitter
         AppendLine(sb, indent + 1, "msg ?? $\"" + spec.interpolatedMessage + "\",");
         AppendLine(sb, indent + 1, "causedBy,");
         AppendLine(sb, indent + 1, "ex,");
-        AppendLine(sb, indent + 1, "new " + RuntimeNamespace + ".CallerInfo(callerMemberName, callerFilePath, callerLineNumber)");
+        AppendLine(sb, indent + 1, "new " + runtime_namespace + ".CallerInfo(callerMemberName, callerFilePath, callerLineNumber)");
         AppendLine(sb, indent, ")");
         AppendLine(sb, indent, "{");
 
@@ -128,7 +128,7 @@ internal static class CompanionEmitter
 
     private static void AppendLine(StringBuilder sb, int indent, string text)
     {
-        sb.Append(' ', indent * IndentSize).Append(text).Append('\n');
+        sb.Append(' ', indent * indent_size).Append(text).Append('\n');
     }
 
     /// <summary>Characters that must be escaped in XML documentation comments</summary>
