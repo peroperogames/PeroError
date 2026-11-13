@@ -304,6 +304,55 @@ public enum IOErr
     }
 
     [Test]
+    public void DuplicateGeneratedClassNameReportsPERR015Test()
+    {
+        // Two members asking for the same class name must not turn into a CS0101 in generated files
+        var run = Run(header + @"
+public enum IOErr
+{
+    [ErrMsg(""a"", name = ""Same"")]
+    A,
+
+    [ErrMsg(""b"", name = ""Same"")]
+    B,
+}");
+
+        Assert.That(DiagnosticIds(run), Is.EqualTo(new[] { "PERR015" }));
+        Assert.That(run.generated.Length, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BadAlignmentReportsPERR001Test()
+    {
+        var run = Run(header + @"
+public enum IOErr
+{
+    [ErrMsg(""{path,abc}"")]
+    [ErrArg(""path"", typeof(string))]
+    NotFound,
+}");
+
+        Assert.That(DiagnosticIds(run), Is.EqualTo(new[] { "PERR001" }));
+        Assert.That(run.generated, Is.Empty);
+    }
+
+    [Test]
+    public void QuoteInFormatSpecifierReportsPERR001Test()
+    {
+        // The format tail is copied into the generated $"..." literal, so a quote must be rejected
+        var run = Run(header + @"
+public enum IOErr
+{
+    [ErrMsg(""len {path:\""x\""}"")]
+    [ErrArg(""path"", typeof(string))]
+    NotFound,
+}");
+
+        Assert.That(DiagnosticIds(run), Is.EqualTo(new[] { "PERR001" }));
+        Assert.That(run.generated, Is.Empty);
+    }
+
+    [Test]
     public void NameConflictReportsPERR008Test()
     {
         var run = Run(header + @"
@@ -447,7 +496,7 @@ public enum IOErr
     }
 
     private static string[] DiagnosticIds(GeneratorRun run) =>
-        run.generatorDiagnostics.Select(static d => d.Id).Distinct().OrderBy(static id => id).ToArray();
+        run.generatorDiagnostics.Select(static d => d.Id).Distinct().OrderBy(static id => id, StringComparer.Ordinal).ToArray();
 
     private static void AssertNoErrors(GeneratorRun run)
     {

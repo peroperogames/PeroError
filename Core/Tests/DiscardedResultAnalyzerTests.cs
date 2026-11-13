@@ -155,6 +155,23 @@ public static class UniHelper
         AssertIds(diagnostics, "PERR101");
     }
 
+    [Test]
+    public void ReportsOverwrittenResultVariableTest()
+    {
+        // The first Result is overwritten without ever being read
+        var diagnostics = Run(Source("var r = Helper.DoWork();\nr = Helper.DoWork();"));
+
+        AssertIds(diagnostics, "PERR101");
+    }
+
+    [Test]
+    public void IgnoresOverwrittenButReadVariableTest()
+    {
+        var diagnostics = Run(Source("var r = Helper.DoWork();\nr = Helper.DoWork();\nif (!r.isOK) { }"));
+
+        AssertIds(diagnostics);
+    }
+
     #endregion
 
     #region Should not report

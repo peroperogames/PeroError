@@ -70,6 +70,9 @@ public sealed class PeroErrorGenerator : ISourceGenerator
             return;
         }
 
+        // Shared across the whole run, so duplicate generated class names are reported here
+        var state = new CompanionGenerationState();
+
         foreach (var candidate in receiver.candidates)
         {
             var model = context.Compilation.GetSemanticModel(candidate.SyntaxTree);
@@ -78,7 +81,7 @@ public sealed class PeroErrorGenerator : ISourceGenerator
                 continue;
             }
 
-            var result = CompanionBuilder.Build(model, field, context.CancellationToken);
+            var result = CompanionBuilder.Build(model, field, state, context.CancellationToken);
             if (result == null)
             {
                 continue;

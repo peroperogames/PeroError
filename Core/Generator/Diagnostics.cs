@@ -82,10 +82,20 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor companionNameConflict = new(
         id: "PERR008",
         title: "Companion class name conflicts with an existing type",
-        messageFormat: "A type named '{0}' already exists; rename it with [ErrMsg(\"...\", Name = \"other name\")] or delete the duplicate",
+        messageFormat: "A type named '{0}' already exists; rename it with [ErrMsg(\"...\", name = \"other name\")] or delete the duplicate",
         category: category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    /// <summary>The same companion class name is generated for more than one enum member</summary>
+    public static readonly DiagnosticDescriptor duplicateCompanionName = new(
+        id: "PERR015",
+        title: "Duplicate generated companion class name",
+        messageFormat: "The companion class '{0}' is already generated for '{1}'; give one of them another name with [ErrMsg(\"...\", name = \"other name\")]",
+        category: category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Two error enum members must not generate companion classes with the same name in the same namespace.");
 
     /// <summary>Companion classes cannot be generated for nested enums</summary>
     public static readonly DiagnosticDescriptor nestedEnumNotSupported = new(

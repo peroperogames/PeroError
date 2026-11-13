@@ -23,7 +23,7 @@ private static Result<string, IOErr> ReadFromFile(string filePath)
     if(!File.Exists(filePath))
     {
        // creates an Err<IOErr>, implicitly converted to Result<string, IOErr>.Fail()
-        return Err.New(IOErr.NotFound, msg: $"File {filePath} NotFound")
+        return Err.New(IOErr.NotFound, message: $"File {filePath} NotFound")
             .AddNote("Note1")
             .AddNote("Note2"); // any error can carry extra descriptive notes
     }
@@ -36,8 +36,8 @@ private static Result<string, IOErr> ReadFromFile(string filePath)
     }
     catch (Exception e) when (e is FileNotFoundException || e is DirectoryNotFoundException)
     {
-        // an error caused by an exception should be created with exception.Warp()
-        return e.Warp(IOErr.NotFound, msg: $"File {filePath} NotFound");
+        // an error caused by an exception should be created with exception.Wrap()
+        return e.Wrap(IOErr.NotFound, message: $"File {filePath} NotFound");
     }
     catch (Exception e)
     {
@@ -62,7 +62,7 @@ public Result<Config, ConfigErr> ReadConfig(string configPath)
             case IOErr.NotFound:
             {
                 // wrap IOErr as ConfigErr
-                return readResult.err.Warp(ConfigErr.NotFound, msg: "WhatEver");
+                return readResult.err.Wrap(ConfigErr.NotFound, message: "WhatEver");
             }
             // Option 2: handle the error in place and let the current function continue
             case IOErr.Others:
@@ -147,4 +147,4 @@ err.message; // "File /tmp/a.txt Do Not Exist"
 err.path;    // "/tmp/a.txt"
 ```
 
-The generated companion class *is* an `Err<TKind>`, so `Warp` / `AddNote` / `Result` / `CastTo<T>` all keep working, and callers do not have to pass `CallerInfo` by hand while the stack trace stays accurate.
+The generated companion class *is* an `Err<TKind>`, so `Wrap` / `AddNote` / `Result` / `CastTo<T>` all keep working, and callers do not have to pass `CallerInfo` by hand while the stack trace stays accurate.

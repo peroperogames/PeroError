@@ -30,7 +30,12 @@ internal static class CompanionBuilder
     };
 
     /// <summary>Handles one field: generate a companion class, report diagnostics, or return null</summary>
-    public static CompanionModel Build(SemanticModel model, IFieldSymbol field, CancellationToken ct)
+    public static CompanionModel Build(
+        SemanticModel model,
+        IFieldSymbol field,
+        CompanionGenerationState state,
+        CancellationToken ct
+    )
     {
         var compilation = model.Compilation;
 
@@ -64,7 +69,7 @@ internal static class CompanionBuilder
                 field.Name));
         }
 
-        return BuildCompanion(model, field, enumSymbol, messageAttribute, argumentAttributes, fallbackLocation, ct);
+        return BuildCompanion(model, field, enumSymbol, messageAttribute, argumentAttributes, state, fallbackLocation, ct);
     }
 
     private static CompanionModel BuildCompanion(
@@ -73,6 +78,7 @@ internal static class CompanionBuilder
         INamedTypeSymbol enumSymbol,
         AttributeData messageAttribute,
         List<AttributeData> argumentAttributes,
+        CompanionGenerationState state,
         Location fallbackLocation,
         CancellationToken ct
     )
@@ -103,12 +109,18 @@ internal static class CompanionBuilder
         string className = ResolveClassName(messageAttribute, enumSymbol, field, location, diagnostics);
 
         CheckNameConflict(enumSymbol, className, compilation, location, diagnostics);
+        string fullClassName = GetFullClassName(enumSymbol, className);
+        CheckDuplicateGeneratedName(fullClassName, className, state, location, diagnostics);
+
         string message = BuildMessage(format, args, declaredNames, location, diagnostics);
 
         if (ContainsError(diagnostics))
         {
             return CompanionModel.FromDiagnostics(diagnostics.ToImmutable());
         }
+
+        // Only reserve the name once this member is really going to be generated
+        state?.Record(fullClassName, enumSymbol.Name + "." + field.Name);
 
         var spec = new CompanionSpec
         {
@@ -200,11 +212,45 @@ internal static class CompanionBuilder
             return;
         }
 
-        var ns = enumSymbol.ContainingNamespace;
-        string fullName = ns.IsGlobalNamespace ? className : ns.ToDisplayString() + "." + className;
-        if (compilation.GetTypeByMetadataName(fullName) != null)
+        if (compilation.GetTypeByMetadataName(GetFullClassName(enumSymbol, className)) != null)
         {
             diagnostics.Add(new CompanionDiagnostic(Diagnostics.companionNameConflict, location, className));
+        }
+    }
+
+    /// <summary>The metadata name of the class the given enum member is going to generate</summary>
+    private static string GetFullClassName(INamedTypeSymbol enumSymbol, string className)
+    {
+        if (string.IsNullOrEmpty(className))
+        {
+            return null;
+        }
+
+        var ns = enumSymbol.ContainingNamespace;
+        return ns.IsGlobalNamespace ? className : ns.ToDisplayString() + "." + className;
+    }
+
+    /// <summary>Detects two members generating a class with the same name (which would be CS0101)</summary>
+    private static void CheckDuplicateGeneratedName(
+        string fullClassName,
+        string className,
+        CompanionGenerationState state,
+        Location location,
+        ImmutableArray<CompanionDiagnostic>.Builder diagnostics
+    )
+    {
+        if (state == null || fullClassName == null)
+        {
+            return;
+        }
+
+        if (state.TryGetOwner(fullClassName, out string existingOwner))
+        {
+            diagnostics.Add(new CompanionDiagnostic(
+                Diagnostics.duplicateCompanionName,
+                location,
+                className,
+                existingOwner));
         }
     }
 

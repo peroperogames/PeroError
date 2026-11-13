@@ -75,6 +75,18 @@ internal static class MessageFormat
                         diagnostics.Add(new CompanionDiagnostic(
                             Diagnostics.unknownFormatArgument, location, badName));
                         return null;
+                    case HoleResult.IllegalCharacter:
+                        diagnostics.Add(new CompanionDiagnostic(
+                            Diagnostics.invalidFormatString,
+                            location,
+                            "A format specifier must not contain quotes, backslashes, braces or control characters"));
+                        return null;
+                    case HoleResult.BadAlignment:
+                        diagnostics.Add(new CompanionDiagnostic(
+                            Diagnostics.invalidFormatString,
+                            location,
+                            "The alignment of a format item must be an integer"));
+                        return null;
                     default:
                         diagnostics.Add(new CompanionDiagnostic(
                             Diagnostics.unsupportedFormatExpression, location, hole.Trim()));
@@ -112,6 +124,8 @@ internal static class MessageFormat
         Ok,
         UnknownName,
         BadSyntax,
+        IllegalCharacter,
+        BadAlignment,
     }
 
     /// <summary>Parses one format item; on success returns the interpolated string content</summary>
@@ -152,18 +166,10 @@ internal static class MessageFormat
 
         // The rest may only be ',alignment' or ':format'
         string rest = hole.Substring(index);
-        string trimmedRest = rest.Trim();
-        if (trimmedRest.Length > 0)
+        HoleResult restResult = ValidateRest(rest);
+        if (restResult != HoleResult.Ok)
         {
-            char lead = trimmedRest[0];
-            if (lead != ',' && lead != ':')
-            {
-                return HoleResult.BadSyntax;
-            }
-            if (trimmedRest.IndexOf('{') >= 0 || trimmedRest.IndexOf('}') >= 0)
-            {
-                return HoleResult.BadSyntax;
-            }
+            return restResult;
         }
 
         if (!identifiers.TryGetValue(name, out string emittedName))
@@ -173,6 +179,50 @@ internal static class MessageFormat
         }
 
         rebuilt = emittedName + rest;
+        return HoleResult.Ok;
+    }
+
+    /// <summary>
+    /// Validates the ',alignment' / ':format' tail of a format item.
+    /// </summary>
+    /// <remarks>
+    /// The tail is copied verbatim into the generated <c>$"..."</c> literal, so it must not be able
+    /// to end that literal: quotes, backslashes, braces and control characters are rejected here so
+    /// the author gets a PERR diagnostic on the attribute instead of a syntax error in the generated
+    /// file. The alignment has to be an integer for the same reason.
+    /// </remarks>
+    private static HoleResult ValidateRest(string rest)
+    {
+        string trimmed = rest.Trim();
+        if (trimmed.Length == 0)
+        {
+            return HoleResult.Ok;
+        }
+
+        char lead = trimmed[0];
+        if (lead != ',' && lead != ':')
+        {
+            return HoleResult.BadSyntax;
+        }
+
+        foreach (char c in trimmed)
+        {
+            if (c == '"' || c == '\\' || c == '{' || c == '}' || char.IsControl(c))
+            {
+                return HoleResult.IllegalCharacter;
+            }
+        }
+
+        if (lead == ',')
+        {
+            int colon = trimmed.IndexOf(':');
+            string alignment = colon >= 0 ? trimmed.Substring(1, colon - 1) : trimmed.Substring(1);
+            if (!int.TryParse(alignment.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _))
+            {
+                return HoleResult.BadAlignment;
+            }
+        }
+
         return HoleResult.Ok;
     }
 

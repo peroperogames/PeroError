@@ -14,7 +14,7 @@ Console.WriteLine($"kind    = {timeout.kind}");
 Console.WriteLine($"message = {timeout.message}");
 Console.WriteLine();
 
-// // The companion class remains Err<TKind>, and it can participate normally in Result / Warp / AddNote.
+// // The companion class remains Err<TKind>, and it can participate normally in Result / Wrap / AddNote.
 Result<string, IoErr> result = notFound;
 Console.WriteLine($"result  = {result}");
 Console.WriteLine($"isOK    = {result.isOK}");

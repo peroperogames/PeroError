@@ -183,7 +183,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (IsReadSomewhere(local, declarator, model, ct))
+            if (IsReadSomewhere(local, statement, model, ct))
             {
                 continue;
             }
@@ -194,15 +194,19 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     }
 
     /// <summary>Whether the local variable is read anywhere in the scope of its declaration</summary>
-    private static bool IsReadSomewhere(ILocalSymbol local, SyntaxNode declaration, SemanticModel model, CancellationToken ct)
+    /// <remarks>
+    /// A local can only be referenced inside the block that declares it (or a nested one), so the
+    /// scan is limited to that block instead of the whole enclosing member.
+    /// Writes do not count as reads: <c>var r = Load(); r = Load();</c> drops the first Result and
+    /// must still be reported.
+    /// </remarks>
+    /// <param name="local">The local variable to look for</param>
+    /// <param name="declaration">The local declaration statement that declares it</param>
+    /// <param name="model">Semantic model used to tell apart locals with the same name</param>
+    /// <param name="ct">Cancellation token</param>
+    private static bool IsReadSomewhere(ILocalSymbol local, LocalDeclarationStatementSyntax declaration, SemanticModel model, CancellationToken ct)
     {
-        var scope = declaration.Ancestors().FirstOrDefault(static node =>
-            node is BaseMethodDeclarationSyntax
-                or LocalFunctionStatementSyntax
-                or AccessorDeclarationSyntax
-                or AnonymousFunctionExpressionSyntax
-                or CompilationUnitSyntax);
-
+        var scope = declaration.Parent;
         if (scope == null)
         {
             // Be conservative when no scope can be found and do not warn
@@ -216,6 +220,11 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
+            if (IsWriteTarget(identifier))
+            {
+                continue;
+            }
+
             if (SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, ct).Symbol, local))
             {
                 return true;
@@ -223,6 +232,20 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
+    }
+
+    /// <summary>Whether the identifier is only written to (assignment target or <c>out</c> argument)</summary>
+    private static bool IsWriteTarget(IdentifierNameSyntax identifier)
+    {
+        if (identifier.Parent is AssignmentExpressionSyntax assignment
+            && assignment.Left == identifier
+            && assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
+        {
+            return true;
+        }
+
+        return identifier.Parent is ArgumentSyntax argument
+               && argument.RefKindKeyword.IsKind(SyntaxKind.OutKeyword);
     }
 
     #endregion

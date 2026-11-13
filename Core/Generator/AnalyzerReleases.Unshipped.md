@@ -17,3 +17,4 @@ PERR009 | PeroError.Generator | Error | Companion classes are not supported for 
 PERR010 | PeroError.Generator | Warning | [ErrArg] has no effect
 PERR011 | PeroError.Generator | Warning | [ErrMsg] is only allowed on error enum members
 PERR014 | PeroError.Generator | Error | Invalid companion class name
+PERR015 | PeroError.Generator | Error | Duplicate generated companion class name

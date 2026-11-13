@@ -117,6 +117,47 @@ public class ResultTest
         Assert.That(receivedValue, Is.Null);
         Assert.That(receivedError, Is.SameAs(m_FailedResult.err));
     }
+
+    [Test]
+    public void TryGetValueTest()
+    {
+        Assert.That(m_SuccessResult.TryGetValue(out string successValue), Is.True);
+        Assert.That(successValue, Is.SameAs(success_message));
+        Assert.That(m_SuccessResult.TryGetValue(out Err<TestErrKind> successError), Is.False);
+        Assert.That(successError, Is.Null);
+
+        Assert.That(m_FailedResult.TryGetValue(out Err<TestErrKind> failedError), Is.True);
+        Assert.That(failedError, Is.SameAs(m_FailedResult.err));
+        Assert.That(m_FailedResult.TryGetValue(out string _), Is.False);
+    }
+
+    [Test]
+    public void OKWithNullValueTest()
+    {
+        // A null success value is still a successful Result: isOK, TryGetValue and ToString must agree
+        Result<string, TestErrKind> result = Result<string, TestErrKind>.OK(null);
+
+        Assert.That(result.isOK, Is.True);
+        Assert.That(result.value, Is.Null);
+        Assert.That(result.TryGetValue(out string nullValue), Is.True);
+        Assert.That(nullValue, Is.Null);
+        Assert.That(result.TryGetValue(out Err<TestErrKind> error), Is.False);
+        Assert.That(error, Is.Null);
+        Assert.That(result.ToString(), Does.Contain("OK"));
+    }
+
+    [Test]
+    public void DefaultResultTest()
+    {
+        // Zero-constructed Results are successful ones: none of the members may throw or disagree
+        Result<string, TestErrKind> result = default;
+
+        Assert.That(result.isOK, Is.True);
+        Assert.That(result.TryGetValue(out string nullValue), Is.True);
+        Assert.That(nullValue, Is.Null);
+        Assert.That(result.TryGetValue(out Err<TestErrKind> _), Is.False);
+        Assert.That(result.ToString(), Does.Contain("OK"));
+    }
 }
 
 [TestFixture]
@@ -162,5 +203,17 @@ public class ResultWithoutValueTest
 
         Assert.That(okInvoked, Is.False);
         Assert.That(receivedError, Is.SameAs(m_FailedResult.err));
+    }
+
+    [Test]
+    public void TryGetValueTest()
+    {
+        Assert.That(m_SuccessResult.TryGetValue(out Succeed? _), Is.True);
+        Assert.That(m_SuccessResult.TryGetValue(out Err<TestErrKind> successError), Is.False);
+        Assert.That(successError, Is.Null);
+
+        Assert.That(m_FailedResult.TryGetValue(out Err<TestErrKind> failedError), Is.True);
+        Assert.That(failedError, Is.SameAs(m_FailedResult.err));
+        Assert.That(m_FailedResult.TryGetValue(out Succeed? _), Is.False);
     }
 }

@@ -52,9 +52,9 @@ public sealed class ErrTests
     {
         // high => mid => low => Exception
         var exception = CreateExceptionWithStackTrace("PanicTest"); // Create an exception with a stack trace
-        var lowErr = exception.Warp(TestErrKind.LowLevel, "Root Cause");
-        var midErr = lowErr.Warp(TestErrKind.MidLevel, "Mid Level Err Occurred");
-        var highErr = midErr.Warp(TestErrKind.HighLevel, "High Level Err Occurred");
+        var lowErr = exception.Wrap(TestErrKind.LowLevel, "Root Cause");
+        var midErr = lowErr.Wrap(TestErrKind.MidLevel, "Mid Level Err Occurred");
+        var highErr = midErr.Wrap(TestErrKind.HighLevel, "High Level Err Occurred");
         m_LineInfo = GetCurrentLineInfo(); // Capture the line info of the line that creates highErr
         m_LineInfo.lineNum -= 1;
         m_Err = highErr;
@@ -131,6 +131,33 @@ public sealed class ErrTests
 
         Assert.That(str, Does.Contain(m_Err.causedBy.causedBy.exception.Message));
         // ReSharper restore PossibleNullReferenceException
+    }
+
+    [Test]
+    public void AddCallerFrameTest()
+    {
+        // AddCallerFrame appends a stack frame to the same instance
+        var err = Err.New(TestErrKind.MidLevel, "in place");
+        Err<TestErrKind> wrapped = err.AddCallerFrame();
+
+        Assert.That(wrapped, Is.SameAs(err));
+        Assert.That(wrapped.kind, Is.EqualTo(TestErrKind.MidLevel));
+        Assert.That(wrapped.message, Is.EqualTo("in place"));
+        Assert.That(wrapped.causedBy, Is.Null);
+    }
+
+    [Test]
+    public void WrapCreatesNewErrorTest()
+    {
+        // The kind/message Wrap overloads create a new error and leave the original one untouched
+        var lowLevel = Err.New(TestErrKind.LowLevel, "root");
+        Err<TestErrKind> wrapped = lowLevel.Wrap(TestErrKind.HighLevel, "high");
+
+        Assert.That(wrapped, Is.Not.SameAs(lowLevel));
+        Assert.That(wrapped.kind, Is.EqualTo(TestErrKind.HighLevel));
+        Assert.That(wrapped.message, Is.EqualTo("high"));
+        Assert.That(wrapped.causedBy, Is.SameAs(lowLevel));
+        Assert.That(lowLevel.causedBy, Is.Null);
     }
 
     #region Utils
