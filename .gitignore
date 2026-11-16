@@ -1,0 +1,27 @@
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+project.lock.json
+project.fragment.lock.json
+*.nupkg
+*.snupkg
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+.vs/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+_ReSharper*/
+*.DotSettings.user
+
+# Note: the dll/xml/pdb files under Unity/Plugins are build artifacts, but they have to be
+# committed for direct use on the Unity side, so do not ignore *.dll / *.pdb / *.xml here.

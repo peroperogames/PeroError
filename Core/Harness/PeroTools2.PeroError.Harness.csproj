@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net11.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <IsPackable>false</IsPackable>
+        <LangVersion>preview</LangVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Source\PeroTools2.PeroError.csproj" />
+      <!-- Generator/analyzer only take part in the build, they are not referenced as assemblies -->
+      <ProjectReference Include="..\Generator\PeroTools2.PeroError.Generator.csproj" ReferenceOutputAssembly="false" />
+      <ProjectReference Include="..\Analyzers\PeroTools2.PeroError.Analyzers.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!--
+        The generator/analyzer are referenced with a static path plus an Analyzer item rather than
+        ProjectReference's OutputItemType="Analyzer". The latter is only resolved on the fly by an
+        MSBuild target during a build, so Rider's editor model never sees it, and the editor gets
+        neither source generation nor analyzer warnings.
+      -->
+      <Analyzer Include="..\Generator\bin\$(Configuration)\netstandard2.0\PeroTools2.PeroError.Generator.dll" />
+      <Analyzer Include="..\Analyzers\bin\$(Configuration)\netstandard2.0\PeroTools2.PeroError.Analyzers.dll" />
+    </ItemGroup>
+
+</Project>

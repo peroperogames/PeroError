@@ -1,2 +1,18 @@
+# The root of the UPM package is the repository root, so the .NET side must be kept out of the
+# published artifacts: otherwise Unity would compile the .cs files under Core/ and Generator/ as
+# well, duplicating the types already shipped in the Plugins DLL (CS0433), and the Generator would
+# fail to compile because Microsoft.CodeAnalysis is not referenced.
+# The published package only keeps the dll/xml/pdb files under Unity/Plugins (including the two
+# Roslyn components: the generator and the analyzer).
 *Project*~/
+
+Core/
+Generator/
+Directory.Build.props
+
 .github/
+.gitignore
+.gitattributes
+.editorconfig
+.DotSettings
+*.sln

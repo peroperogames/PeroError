@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Analyzers/generators must be built for netstandard2.0, otherwise Roslyn cannot load them -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>PeroTools2.PeroError.Generator</AssemblyName>
+    <RootNamespace>PeroTools2.Error.Generator</RootNamespace>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Unity's Roslyn is stuck at 3.8, and the official manual requires generators to be built with
+      Microsoft.CodeAnalysis 3.8 (docs.unity3d.com/Manual/roslyn-analyzers.html); a higher version
+      cannot be loaded in Unity. A generator built against the lower version still works in newer
+      Roslyn / Rider / Visual Studio.
+    -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" PrivateAssets="all" />
+    <!-- Only used for release tracking checks of the rules (RS2002/RS2008), not a runtime dependency -->
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Release tracking of the diagnostic IDs, satisfies RS2008 -->
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <Target Name="CopyUnityRoslynArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)'">
+    <ItemGroup>
+      <_UnityRoslynArtifact Include="$(TargetDir)$(AssemblyName).dll" />
+    </ItemGroup>
+
+    <MakeDir Directories="$(UnityPluginsDir)" />
+    <Copy SourceFiles="@(_UnityRoslynArtifact)" DestinationFolder="$(UnityPluginsDir)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="$(AssemblyName) => Unity/Plugins\$(AssemblyName).dll" />
+  </Target>
+
+</Project>

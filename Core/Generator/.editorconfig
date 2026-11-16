@@ -1,0 +1,9 @@
+root = false
+
+[*.cs]
+
+# The generator has to use the V1 ISourceGenerator:
+# Unity's Roslyn is stuck at Microsoft.CodeAnalysis 3.8 and has no IIncrementalGenerator (4.0+), so a
+# dll written with an incremental generator cannot be loaded in Unity. RS1035 is merely the
+# "prefer incremental generators" suggestion.
+dotnet_diagnostic.RS1035.severity = none
