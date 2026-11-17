@@ -2,6 +2,83 @@
 
 `Err<TKind>` / `Result<T>` style error handling for C#.
 
+## Install
+
+### Nuget
+
+Append following content to project file (`.csproj`):
+
+```xml
+<ItemGroup>
+    <PackageReference Include="PeroTools2.Error" Version="0.2.0" />
+</ItemGroup>
+```
+
+Or install via CLI:
+
+```sh
+dotnet add package PeroTools2.PeroError --version 0.2.0
+```
+
+### Unity
+
+Append following content to `Packages/manifest.json`:
+
+**From [GIT](https://github.com/peroperogames/PeroError):**
+
+```json
+{
+  "dependencies":
+  {
+    "com.prpr.error": "https://github.com/peroperogames/PeroError.git#0.2.0"
+  }
+}
+```
+
+**From [NPMJS](https://www.npmjs.com/package/com.prpr.error/):**
+
+```json
+{
+  "scopedRegistries":
+  [
+    {
+      "name": "npmjs",
+      "url": "https://registry.npmjs.org",
+      "scopes": ["com.prpr"]
+    }
+  ],
+  "dependencies":
+  {
+    "com.prpr.error": "0.2.0"
+  }
+}
+```
+
+**From [OpenUPM](https://openupm.com/packages/com.prpr.error/):**
+
+```json
+{
+  "scopedRegistries":
+  [
+    {
+      "name": "package.openupm.com",
+      "url": "https://package.openupm.com",
+      "scopes": ["com.prpr"]
+    }
+  ],
+  "dependencies":
+  {
+    "com.prpr.error": "0.2.0"
+  }
+}
+```
+
+Or install via CLI:
+
+```sh
+openupm add com.prpr.error
+```
+
 ## Features
 
 ### Quick start
@@ -80,14 +157,27 @@ public Result<Config, ConfigErr> ReadConfig(string configPath)
 }
 ```
 
-If your project is built with .NET 11, you can use pattern matching with union types:
+Function style for railway oriented programming is also supported:
 
 ```csharp
-internal enum IOErr
+enum IOErr
 {
     NotFound,
     Timeout
 }
+
+static string DealWithIOError(Result<string, IOErr> result) => result.Match( 
+    static value => $"No error, the value is {value}",
+    static err => err.kind switch
+    {
+        IOErr.NotFound => "Not found",
+        IOErr.Timeout => "Timeout"
+    });
+```
+
+If your project is built with .NET 11, you can use pattern matching with union types:
+
+```csharp
 static string DealWithIOError(Result<string, IOErr> result) => result switch
 {
     string value => $"No error, the value is {value}",
@@ -106,7 +196,7 @@ When an error needs to carry data, generate a **companion error class** for it. 
 ```csharp
 public enum IOErr
 {
-    [ErrMsg("File {path} Do Not Exist")]              // supports format strings
+    [ErrMsg("File {path} Do Not Exist")]                        // supports format strings
     [ErrArg("path", typeof(string), "Path that was not found")] // ErrArg can be repeated
     NotFound,
 }
@@ -148,3 +238,7 @@ err.path;    // "/tmp/a.txt"
 ```
 
 The generated companion class *is* an `Err<TKind>`, so `Wrap` / `AddNote` / `Result` / `CastTo<T>` all keep working, and callers do not have to pass `CallerInfo` by hand while the stack trace stays accurate.
+
+## License
+
+PeroError is released under the [MIT License](LICENSE). Copyright (c) 2026, PeroPeroGames.

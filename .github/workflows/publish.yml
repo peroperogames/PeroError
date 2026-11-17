@@ -6,4 +6,12 @@ jobs:
   call-publish:
     if: github.actor != 'perotoolsbot[bot]'
     uses: peroperogames/ToolsWorkflow/.github/workflows/publish-npm.yml@main
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      channels: peronpm,npmjs,nuget
+      working-directory: 'Unity'
+      nuget-project: 'Core/Source/PeroTools2.PeroError.Core.csproj'
+      nuget-user: 'Peropero'
     secrets: inherit

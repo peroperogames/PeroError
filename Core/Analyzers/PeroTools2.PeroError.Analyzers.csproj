@@ -1,38 +1,44 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <!-- Like generators, analyzers must target netstandard2.0 or Roslyn cannot load them -->
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <AssemblyName>PeroTools2.PeroError.Analyzers</AssemblyName>
-    <RootNamespace>PeroTools2.Error.Analyzers</RootNamespace>
-    <IsRoslynComponent>true</IsRoslynComponent>
-    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <IsPackable>false</IsPackable>
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <AssemblyName>PeroTools2.PeroError.Analyzers</AssemblyName>
+        <RootNamespace>PeroTools2.Error.Analyzers</RootNamespace>
+        <IsRoslynComponent>true</IsRoslynComponent>
+        <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+        <IsPackable>false</IsPackable>
+        <LangVersion>15</LangVersion>
+        <Company>PeroperoGames</Company>
+        <Copyright>© 2026 PeroperoGames</Copyright>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <Description>Analyzers for PeroError.</Description>
+        <PackageTags>error;result;unity;error-handling</PackageTags>
+        <RepositoryUrl>https://github.com/peroperogames/PeroError</RepositoryUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <Nullable>annotations</Nullable>
+        <Version>0.2.0</Version>
+        <AssemblyVersion>0.2.0</AssemblyVersion>
+        <FileVersion>0.2.0</FileVersion>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Keep in sync with the generator: Unity's Roslyn is 3.8, so the assembly must be
-         compiled against 3.8 to be loadable inside Unity -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" PrivateAssets="all" />
-    <!-- Only used for the rule release tracking checks (RS2002/RS2008), not a runtime dependency -->
-    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Release tracking for the diagnostic IDs, satisfying RS2008 -->
-    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
-    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
-  </ItemGroup>
-
-  <Target Name="CopyUnityRoslynArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)'">
     <ItemGroup>
-      <_UnityRoslynArtifact Include="$(TargetDir)$(AssemblyName).dll" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="3.8.0" PrivateAssets="all"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all"/>
     </ItemGroup>
 
-    <MakeDir Directories="$(UnityPluginsDir)" />
-    <Copy SourceFiles="@(_UnityRoslynArtifact)" DestinationFolder="$(UnityPluginsDir)" SkipUnchangedFiles="true" />
-    <Message Importance="high" Text="$(AssemblyName) => Unity/Plugins\$(AssemblyName).dll" />
-  </Target>
+    <ItemGroup>
+        <AdditionalFiles Include="AnalyzerReleases.Shipped.md"/>
+        <AdditionalFiles Include="AnalyzerReleases.Unshipped.md"/>
+    </ItemGroup>
+
+    <Target Name="CopyUnityRoslynArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)'">
+        <ItemGroup>
+            <_UnityRoslynArtifact Include="$(TargetDir)$(AssemblyName).dll"/>
+        </ItemGroup>
+        <MakeDir Directories="$(UnityPluginsDir)"/>
+        <Copy SourceFiles="@(_UnityRoslynArtifact)" DestinationFolder="$(UnityPluginsDir)" SkipUnchangedFiles="true"/>
+        <Message Importance="high" Text="$(AssemblyName) => Unity/Plugins\$(AssemblyName).dll"/>
+    </Target>
 
 </Project>

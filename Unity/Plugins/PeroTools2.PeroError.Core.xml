@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <doc>
     <assembly>
-        <name>PeroTools2.PeroError</name>
+        <name>PeroTools2.PeroError.Core</name>
     </assembly>
     <members>
         <member name="T:PeroTools2.Error.CallerInfo">

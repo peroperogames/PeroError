@@ -1,44 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net11.0</TargetFramework>
-    <AssemblyName>PeroTools2.PeroError.Tests</AssemblyName>
-    <RootNamespace>PeroTools2.Error.Tests</RootNamespace>
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>net11.0</TargetFramework>
+        <AssemblyName>PeroTools2.PeroError.Tests</AssemblyName>
+        <RootNamespace>PeroTools2.Error.Tests</RootNamespace>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="NUnit" Version="4.4.0" />
-    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
-    <!--
-      The generator/analyzer themselves are compiled against Microsoft.CodeAnalysis 3.8
-      (a Unity requirement), and the tests drive them directly, so a newer Roslyn host
-      is enough (backwards compatible).
-    -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
-  </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1"/>
+        <PackageReference Include="NUnit" Version="4.4.0"/>
+        <PackageReference Include="NUnit3TestAdapter" Version="4.6.0"/>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Source\PeroTools2.PeroError.csproj" />
-    <!--
-      Plain reference: the tests call new PeroErrorGenerator() / new DiscardedResultAnalyzer()
-      to drive them directly.
-    -->
-    <ProjectReference Include="..\Generator\PeroTools2.PeroError.Generator.csproj" />
-    <ProjectReference Include="..\Analyzers\PeroTools2.PeroError.Analyzers.csproj" />
-  </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Source\PeroTools2.PeroError.Core.csproj" />
+        <ProjectReference Include="..\Generator\PeroTools2.PeroError.Generator.csproj"/>
+        <ProjectReference Include="..\Analyzers\PeroTools2.PeroError.Analyzers.csproj"/>
+    </ItemGroup>
 
-  <ItemGroup>
-    <!--
-      Also hooked up as an Analyzer so the test project itself can declare error enums with
-      [ErrMsg]/[ErrArg] and is subject to the Result discard check. A static path is used
-      instead of OutputItemType="Analyzer" so that Rider's editor model sees them too
-      (the latter is only resolved during a build).
-    -->
-    <Analyzer Include="..\Generator\bin\$(Configuration)\netstandard2.0\PeroTools2.PeroError.Generator.dll" />
-    <Analyzer Include="..\Analyzers\bin\$(Configuration)\netstandard2.0\PeroTools2.PeroError.Analyzers.dll" />
-  </ItemGroup>
+    <ItemGroup>
+        <Analyzer Include="..\Generator\bin\$(Configuration)\netstandard2.0\PeroTools2.PeroError.Generator.dll"/>
+        <Analyzer Include="..\Analyzers\bin\$(Configuration)\netstandard2.0\PeroTools2.PeroError.Analyzers.dll"/>
+    </ItemGroup>
 
 </Project>
