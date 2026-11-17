@@ -42,7 +42,7 @@ namespace PeroTools2.Error;
 /// }
 ///
 /// // The above automatically generates IOErr_NotFound : Err&lt;IOErr&gt;
-/// var err = new IOErr_NotFound("a.txt");
+/// var err = IOErr_NotFound.New("a.txt");
 /// </code>
 /// </example>
 [AttributeUsage(AttributeTargets.Field, AllowMultiple = false, Inherited = false)]

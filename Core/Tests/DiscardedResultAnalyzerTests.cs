@@ -2,7 +2,7 @@
  * Copyright (c) PeroPeroGames Co., Ltd.
  * Author: Gatongone
  * Created On: 2026/11/13
- * Description: Tests for the Result discard analyzer
+ * Description: Tests for the Result consumption analyzer
  */
 
 using System;
@@ -26,6 +26,7 @@ public sealed class DiscardedResultAnalyzerTests
 public enum MyErr
 {
     A,
+    B,
 }
 
 public static class Helper
@@ -39,8 +40,8 @@ public static class Helper
     public static System.Threading.Tasks.ValueTask<Result<MyErr>> DoWorkValueTask()
         => new System.Threading.Tasks.ValueTask<Result<MyErr>>(default(Result<MyErr>));
 
-    public static void Handle(Result<MyErr> result) { }
-    public static void HandleInt(Result<int, MyErr> result) { }
+    public static void Handle(Result<MyErr> result) => result.Dispose();
+    public static void HandleInt(Result<int, MyErr> result) => result.Dispose();
 }
 ";
 
@@ -64,7 +65,7 @@ public static class UniHelper
     #region Should report
 
     [Test]
-    public void ReportsDiscardedResultTest()
+    public void ReportsUnconsumedCallTest()
     {
         var diagnostics = Run(Source("Helper.DoWork();"));
 
@@ -73,7 +74,7 @@ public static class UniHelper
     }
 
     [Test]
-    public void ReportsDiscardedResultWithValueTest()
+    public void ReportsUnconsumedResultWithValueTest()
     {
         var diagnostics = Run(Source("Helper.DoWorkValue();"));
 
@@ -83,7 +84,6 @@ public static class UniHelper
     [Test]
     public void ReportsFireAndForgetTaskTest()
     {
-        // Calls an async method but neither awaits its result nor stores it
         var diagnostics = Run(Source("Helper.DoWorkAsync();"));
 
         AssertIds(diagnostics, "PERR100");
@@ -98,6 +98,14 @@ public static class UniHelper
     }
 
     [Test]
+    public void ReportsDiscardedAwaitOfVariableTest()
+    {
+        var diagnostics = Run(SourceAsync("var task = Helper.DoWorkAsync();\nawait task;"));
+
+        AssertIds(diagnostics, "PERR100");
+    }
+
+    [Test]
     public void ReportsDiscardedValueTaskAwaitTest()
     {
         var diagnostics = Run(SourceAsync("await Helper.DoWorkValueTask();"));
@@ -106,10 +114,30 @@ public static class UniHelper
     }
 
     [Test]
-    public void ReportsDiscardedUniTaskTest()
+    public void ReportsUniTaskTest()
     {
-        // The UniTask assembly is not referenced by the analyzer, so it is recognized by name
-        var diagnostics = Run(prelude + uni_task_prelude + "public static class Subject { public static void Test() { UniHelper.GetUniTask(); } }");
+        // The UniTask assembly is not referenced by the analyzer, the wrapper is recognized by name
+        var diagnostics = Run(
+            prelude + uni_task_prelude
+                    + "public static class Subject { public static void Test() { UniHelper.GetUniTask(); } }");
+
+        AssertIds(diagnostics, "PERR100");
+    }
+
+    [Test]
+    public void ReportsInspectionOnlyTest()
+    {
+        // Reading isOK / calling Unwrap() does not consume the Result
+        var diagnostics = Run(Source("Helper.DoWork().Unwrap();\nif (!Helper.DoWork().isOK) { }"));
+
+        AssertIds(diagnostics, "PERR100", "PERR100");
+    }
+
+    [Test]
+    public void ReportsExplicitDiscardTest()
+    {
+        // `_ = ...` no longer silences the analyzer: the Result is still not consumed
+        var diagnostics = Run(Source("_ = Helper.DoWork();"));
 
         AssertIds(diagnostics, "PERR100");
     }
@@ -131,16 +159,7 @@ public static class UniHelper
     }
 
     [Test]
-    public void ReportsDiscardedAwaitOfVariableTest()
-    {
-        // Awaiting a variable discards the result just the same
-        var diagnostics = Run(SourceAsync("var task = Helper.DoWorkAsync();\nawait task;"));
-
-        AssertIds(diagnostics, "PERR100");
-    }
-
-    [Test]
-    public void ReportsUnusedResultVariableTest()
+    public void ReportsUnconsumedLocalTest()
     {
         var diagnostics = Run(Source("var result = Helper.DoWork();"));
 
@@ -148,28 +167,190 @@ public static class UniHelper
     }
 
     [Test]
-    public void ReportsUnusedAwaitResultVariableTest()
+    public void ReportsLocalInspectedOnlyTest()
     {
-        var diagnostics = Run(SourceAsync("var result = await Helper.DoWorkAsync();"));
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nif (!result.isOK) { }"));
 
         AssertIds(diagnostics, "PERR101");
     }
 
     [Test]
-    public void ReportsOverwrittenResultVariableTest()
+    public void ReportsLocalUnwrappedTest()
     {
-        // The first Result is overwritten without ever being read
-        var diagnostics = Run(Source("var r = Helper.DoWork();\nr = Helper.DoWork();"));
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.Unwrap();"));
 
         AssertIds(diagnostics, "PERR101");
     }
 
     [Test]
-    public void IgnoresOverwrittenButReadVariableTest()
+    public void ReportsLocalErrorReadOnlyTest()
     {
-        var diagnostics = Run(Source("var r = Helper.DoWork();\nr = Helper.DoWork();\nif (!r.isOK) { }"));
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nvar error = result.err;"));
+
+        AssertIds(diagnostics, "PERR101");
+    }
+
+    [Test]
+    public void ReportsUnderscoreLocalTest()
+    {
+        // A leading underscore is not a consumption marker any more
+        var diagnostics = Run(Source("var _ = Helper.DoWork();"));
+
+        AssertIds(diagnostics, "PERR101");
+    }
+
+    [Test]
+    public void ReportsOverwrittenLocalTest()
+    {
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult = Helper.DoWork();"));
+
+        AssertIds(diagnostics, "PERR101");
+    }
+
+    [Test]
+    public void ReportsDisposedTwiceTest()
+    {
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.Dispose();\nresult.Dispose();"));
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
+    public void ReportsUsingAndWrappedTest()
+    {
+        // `using` disposes the Result, and wrapping its error hands the error over a second time:
+        // the disposed error is returned to the pool while the new error still refers to it
+        var diagnostics = Run(Source(
+            "using var source = Helper.DoWork();\n"
+            + "var wrapped = Result<MyErr>.Fail(source.err!.Wrap(MyErr.A, \"wrapped\"));\n"
+            + "Helper.Handle(wrapped);"));
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
+    public void ReportsUsingAndPassedTest()
+    {
+        // Passing a using variable on hands ownership to the callee as well
+        var diagnostics = Run(Source("using var result = Helper.DoWork();\nHelper.Handle(result);"));
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
+    public void ReportsUnconsumedParameterTest()
+    {
+        // A Result passed in as a parameter is owned by the method from then on
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static void Test(Result<MyErr> value)
+    {
+        if (!value.isOK) { }
+    }
+}");
+
+        AssertIds(diagnostics, "PERR103");
+    }
+
+    [Test]
+    public void ReportsParameterConsumedTwiceTest()
+    {
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static void Test(Result<MyErr> value)
+    {
+        value.Dispose();
+        Helper.Handle(value);
+    }
+}");
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
+    public void ReportsSameBranchConsumedTwiceTest()
+    {
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWork();
+if (result.isOK)
+{
+    result.Dispose();
+    Helper.Handle(result);
+}"));
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
+    public void IgnoresConsumedInSeparateBranchesTest()
+    {
+        // Only one branch runs, so the Result is consumed exactly once on every path
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWork();
+if (result.isOK)
+{
+    result.Dispose();
+}
+else
+{
+    Helper.Handle(result);
+}"));
 
         AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresDisposedAndWrappedInSeparateBranchesTest()
+    {
+        // The shape the README recommends: dispose on success, wrap the error on failure
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWork();
+if (result.isOK)
+{
+    result.Dispose();
+}
+else
+{
+    var wrapped = result.err!.Wrap(MyErr.A, ""wrapped"");
+    Helper.Handle(wrapped);
+}"));
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresConsumedParameterTest()
+    {
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static void Test(Result<MyErr> value) => value.Dispose();
+
+    public static void Test2(Result<MyErr> value) => Helper.Handle(value);
+
+    public static void Test3(Result<MyErr> value) => value.err!.Wrap(MyErr.A, ""wrapped"");
+}");
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void ReportsPassedAndReturnedTest()
+    {
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static Result<MyErr> Test()
+    {
+        var result = Helper.DoWork();
+        Helper.Handle(result);
+        return result;
+    }
+}");
+
+        AssertIds(diagnostics, "PERR102");
     }
 
     #endregion
@@ -177,20 +358,15 @@ public static class UniHelper
     #region Should not report
 
     [Test]
-    public void IgnoresWhenCheckedTest()
+    public void IgnoresPassedAsArgumentTest()
     {
-        var diagnostics = Run(Source(@"
-var result = Helper.DoWork();
-if (!result.isOK)
-{
-    System.Console.WriteLine(result.err);
-}"));
+        var diagnostics = Run(Source("Helper.Handle(Helper.DoWork());\nHelper.HandleInt(Helper.DoWorkValue());"));
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresWhenReturnedTest()
+    public void IgnoresReturnedTest()
     {
         var diagnostics = Run(prelude + @"
 public static class Subject
@@ -205,56 +381,64 @@ public static class Subject
     }
 
     [Test]
-    public void IgnoresExplicitDiscardTest()
+    public void IgnoresLocalReturnedTest()
     {
-        var diagnostics = Run(Source("_ = Helper.DoWork();"));
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static Result<MyErr> Test()
+    {
+        var result = Helper.DoWork();
+        return result;
+    }
+}");
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresUnderscorePrefixedLocalTest()
+    public void IgnoresDisposedTest()
     {
-        // Mirrors Rust: both let _ = ...; and let _x = ...; mean "intentionally unused"
-        var diagnostics = Run(Source("var _ = Helper.DoWork();\nvar _ignored = Helper.DoWork();"));
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.Dispose();\nHelper.DoWork().Dispose();"));
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresExplicitDiscardWithAwaitTest()
+    public void IgnoresUsingDeclarationTest()
     {
-        var diagnostics = Run(SourceAsync("_ = await Helper.DoWorkAsync();"));
+        var diagnostics = Run(Source("using var result = Helper.DoWork();"));
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresWhenPassedAsArgumentTest()
+    public void IgnoresUsingStatementTest()
     {
-        var diagnostics = Run(Source("Helper.Handle(Helper.DoWork());\nHelper.HandleInt(Helper.DoWorkValue());"));
+        var diagnostics = Run(Source("using (var result = Helper.DoWork()) { }"));
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresWhenConditionCheckedTest()
+    public void IgnoresPassedLocalTest()
     {
-        var diagnostics = Run(Source("if (Helper.DoWork().isOK) { }\nswitch (Helper.DoWork()) { default: break; }"));
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nif (!result.isOK) { Helper.Handle(result); }"));
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresWhenUnwrappedTest()
+    public void IgnoresWrappedErrorTest()
     {
-        var diagnostics = Run(Source("Helper.DoWork().UnWarp();"));
+        // Rule 4: wrapping the error hands it over to the new error
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.err.Wrap(MyErr.A, \"wrapped\");"));
 
         AssertIds(diagnostics);
     }
 
     [Test]
-    public void IgnoresPropertyExpressionBodyTest()
+    public void IgnoresResultPropertyExpressionBodyTest()
     {
         var diagnostics = Run(prelude + "public static class Subject { public static Result<MyErr> Value => Helper.DoWork(); }");
 
@@ -264,7 +448,8 @@ public static class Subject
     [Test]
     public void IgnoresNonVoidLambdaTest()
     {
-        var diagnostics = Run(Source("System.Func<Result<MyErr>> getter = () => Helper.DoWork();\nif (getter().isOK) { }"));
+        var diagnostics = Run(Source(
+            "System.Func<Result<MyErr>> getter = () => Helper.DoWork();\nHelper.Handle(getter());"));
 
         AssertIds(diagnostics);
     }
@@ -285,8 +470,10 @@ err.AddNote(""note"");"));
     [Test]
     public void IgnoresWithoutPeroErrorReferenceTest()
     {
-        // Projects that do not reference PeroTools2.PeroError must not be touched by these rules
-        var compilation = CreateCompilation("public static class Subject { public static void Test() { System.Console.WriteLine(1); } }", referenceLibrary: false);
+        // Projects that do not reference PeroTools2.PeroError are not affected
+        var compilation = CreateCompilation(
+            "public static class Subject { public static void Test() { System.Console.WriteLine(1); } }",
+            referenceLibrary: false);
         var diagnostics = RunAnalyzer(compilation, assertNoErrors: false);
 
         AssertIds(diagnostics);
@@ -327,7 +514,7 @@ public static class Subject
                 .Where(static d => d.Severity == DiagnosticSeverity.Error)
                 .Select(static d => d.ToString())
                 .ToArray();
-            Assert.That(errors, Is.Empty, "Test source failed to compile:\n" + string.Join("\n", errors));
+            Assert.That(errors, Is.Empty, "The test source does not compile:\n" + string.Join("\n", errors));
         }
 
         var withAnalyzers = compilation.WithAnalyzers(
@@ -340,7 +527,9 @@ public static class Subject
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
         var references = referenceLibrary
             ? s_References
-            : s_References.Where(static r => !r.Display.EndsWith("PeroTools2.PeroError.dll", StringComparison.OrdinalIgnoreCase)).ToImmutableArray();
+            : s_References
+                .Where(static r => !r.Display.EndsWith("PeroTools2.PeroError.dll", StringComparison.OrdinalIgnoreCase))
+                .ToImmutableArray();
 
         return CSharpCompilation.Create(
             "DiscardedResultAnalyzerTestAssembly",

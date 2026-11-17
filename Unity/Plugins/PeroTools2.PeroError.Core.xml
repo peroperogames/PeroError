@@ -102,13 +102,19 @@
             <summary>Error enum value of the current error</summary>
         </member>
         <member name="P:PeroTools2.Error.Err`1.causedBy">
-            <inheritdoc cref="P:PeroTools2.Error.ErrBase.causedBy"/>
+            <inheritdoc/>
         </member>
         <member name="P:PeroTools2.Error.Err`1.message">
-            <inheritdoc cref="P:PeroTools2.Error.ErrBase.message"/>
+            <inheritdoc/>
         </member>
         <member name="P:PeroTools2.Error.Err`1.exception">
-            <inheritdoc cref="P:PeroTools2.Error.ErrBase.exception"/>
+            <inheritdoc/>
+        </member>
+        <member name="M:PeroTools2.Error.Err`1.OnReturn">
+            <summary>
+            Called when the error goes back to the pool. A derived companion class overrides this to keep
+            its own pool, so instances of different companion classes never get mixed up.
+            </summary>
         </member>
         <member name="F:PeroTools2.Error.Err`1.stackTrace">
             <summary>Simulates a stack trace with CallerInfo</summary>
@@ -128,6 +134,15 @@
             error enum (if any)
             </summary>
         </member>
+        <member name="M:PeroTools2.Error.Err`1.CastTo``1(``0,System.String)">
+            <summary>
+            Converts to a new <see cref="T:PeroTools2.Error.Err`1"/> with new kind and message, which keeps stored Error info (causedBy/exception/stackTrace).
+            </summary>
+            <param name="targetKind">New error kind.</param>
+            <param name="newMessage">New message (using current message if null or empty).</param>
+            <typeparam name="TTo">New error kind type.</typeparam>
+            <returns>A new <see cref="T:PeroTools2.Error.Err`1"/> with new kind and message, which keeps stored Error info (causedBy/exception/stackTrace).</returns>
+        </member>
         <member name="M:PeroTools2.Error.Err`1.Panic">
             <inheritdoc cref="M:PeroTools2.Error.ErrBase.Panic"/>
         </member>
@@ -142,6 +157,29 @@
         </member>
         <member name="M:PeroTools2.Error.Err`1.ToString">
             <summary>Formats the complete error info (including stack trace/Notes/Exception/CausedBy)</summary>
+        </member>
+        <member name="M:PeroTools2.Error.Err`1.Reset">
+            <summary>
+            This error has been fully resolved.
+            </summary>
+        </member>
+        <member name="M:PeroTools2.Error.Err`1.Init(`0,System.String,PeroTools2.Error.ErrBase,System.Exception,PeroTools2.Error.CallerInfo)">
+            <summary>Re-initializes a pooled instance before it is handed out again</summary>
+            <param name="kind">Error enum value</param>
+            <param name="message">Error message</param>
+            <param name="causedBy">Underlying error, when there is one</param>
+            <param name="exception">Underlying exception, when there is one</param>
+            <param name="callerInfo">Caller info of the frame that creates the error</param>
+            <remarks>Only called by the pooling machinery and by generated companion classes</remarks>
+        </member>
+        <member name="M:PeroTools2.Error.Err`1.Init(`0,System.String,PeroTools2.Error.ErrBase,System.Exception,System.Collections.Generic.List{PeroTools2.Error.CallerInfo})">
+            <summary>Re-initializes a pooled instance, keeping a whole stack trace</summary>
+            <param name="kind">Error enum value</param>
+            <param name="message">Error message</param>
+            <param name="causedBy">Underlying error, when there is one</param>
+            <param name="exception">Underlying exception, when there is one</param>
+            <param name="stackTrace">Stack trace to adopt</param>
+            <remarks>Only called by the pooling machinery</remarks>
         </member>
         <member name="T:PeroTools2.Error.ErrArgAttribute">
             <summary>
@@ -217,6 +255,9 @@
         <member name="M:PeroTools2.Error.ErrBase.AddNote(System.String)">
             <summary>Adds extra information to the current error to describe it better</summary>
         </member>
+        <member name="M:PeroTools2.Error.ErrBase.Reset">
+            <summary>Reset error state.</summary>
+        </member>
         <member name="T:PeroTools2.Error.ErrBaseExtensions">
             <summary>Fluent extension methods for <see cref="T:PeroTools2.Error.ErrBase"/></summary>
         </member>
@@ -257,7 +298,7 @@
              }
             
              // The above automatically generates IOErr_NotFound : Err&lt;IOErr&gt;
-             var err = new IOErr_NotFound("a.txt");
+             var err = IOErr_NotFound.New("a.txt");
              </code>
              </example>
         </member>
@@ -319,7 +360,7 @@
         <member name="M:PeroTools2.Error.Result`1.op_Implicit(PeroTools2.Error.Err{`0})~PeroTools2.Error.Result{`0}">
             <summary>Treats an error directly as a failed Result</summary>
         </member>
-        <member name="M:PeroTools2.Error.Result`1.UnWarp">
+        <member name="M:PeroTools2.Error.Result`1.Unwrap">
             <summary>
             Asserts that the Result succeeded. Invokes <see cref="M:PeroTools2.Error.ErrBase.Panic"/> when it did not
             </summary>
@@ -362,6 +403,11 @@
         <member name="M:PeroTools2.Error.Result`1.IUnionMembers.TryGetValue(System.Nullable{PeroTools2.Error.Succeed}@)">
             <summary>Tries to get the success marker; returns true only when the Result succeeded</summary>
         </member>
+        <member name="M:PeroTools2.Error.Result`1.Dispose">
+            <summary>
+            Mark this result has been fully resolved.
+            </summary>
+        </member>
         <member name="T:PeroTools2.Error.Result`2">
             <summary>Result type that carries a value</summary>
             <typeparam name="T">Type of the value on success</typeparam>
@@ -384,6 +430,11 @@
         </member>
         <member name="P:PeroTools2.Error.Result`2.isOK">
             <summary>State of the Result, succeeded or failed. When failed, err is always non-null</summary>
+        </member>
+        <member name="M:PeroTools2.Error.Result`2.TryGetValue(`0@,PeroTools2.Error.Err{`1}@)">
+            <summary>Tries to get the value; returns true only when the Result succeeded</summary>
+            <param name="result">Receives the value when the Result succeeded (it may be null)</param>
+            <param name="error">Receives the error when the Result failed</param>
         </member>
         <member name="M:PeroTools2.Error.Result`2.TryGetValue(`0@)">
             <summary>Tries to get the value; returns true only when the Result succeeded</summary>
@@ -408,7 +459,12 @@
         <member name="M:PeroTools2.Error.Result`2.ToString">
             <summary>Formats the state of the Result for output</summary>
         </member>
-        <member name="M:PeroTools2.Error.Result`2.UnWarp">
+        <member name="M:PeroTools2.Error.Result`2.Dispose">
+            <summary>
+            Mark this result has been fully resolved.
+            </summary>
+        </member>
+        <member name="M:PeroTools2.Error.Result`2.Unwrap">
             <summary>
             Asserts that the Result succeeded.
             Returns the value on success,

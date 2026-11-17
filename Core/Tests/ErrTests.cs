@@ -38,7 +38,7 @@ public sealed class ErrTests
         var type = typeof(Err<TestErrKind>);
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
-        m_ExceptionField = type.GetField("<exception>k__BackingField", flags);
+        m_ExceptionField = type.GetField("m_Exception", flags);
         m_NotesField = type.GetField("<notes>k__BackingField", flags);
         m_StackTrace = type.GetField("stackTrace", flags);
 
@@ -111,7 +111,7 @@ public sealed class ErrTests
         Assert.That(GetNotes(m_Err).Value, Is.EquivalentTo(new[] { "note1", "note2" }));
         return;
 
-        Lazy<IList<string>> GetNotes(Err<TestErrKind> err) => (Lazy<IList<string>>)m_NotesField.GetValue(err);
+        Lazy<List<string>> GetNotes(Err<TestErrKind> err) => (Lazy<List<string>>)m_NotesField.GetValue(err);
     }
 
     [Test]

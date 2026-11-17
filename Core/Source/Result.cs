@@ -16,7 +16,7 @@ namespace PeroTools2.Error;
 #if NET11_0_OR_GREATER
 [System.Runtime.CompilerServices.Union]
 #endif
-public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where TErrKind : struct, Enum
+public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDisposable where TErrKind : struct, Enum
 {
     /// <summary>
     /// Holds the error info when failed (always present). Null when succeeded
@@ -69,7 +69,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
     /// Asserts that the Result succeeded. Invokes <see cref="ErrBase.Panic"/> when it did not
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    public void UnWarp()
+    public void Unwrap()
     {
         if (!isOK) throw err!.Panic(); // When !isOK, err is always non-null
     }
@@ -118,6 +118,17 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
         /// <summary>Tries to get the success marker; returns true only when the Result succeeded</summary>
         bool TryGetValue(out Succeed? value);
     }
+
+    /// <summary>
+    /// Mark this result has been fully resolved.
+    /// </summary>
+    public void Dispose()
+    {
+        if (err != null)
+        {
+            Err<TErrKind>.Return(err);
+        }
+    }
 }
 
 /// <summary>Result type that carries a value</summary>
@@ -126,7 +137,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
 #if NET11_0_OR_GREATER
 [System.Runtime.CompilerServices.Union]
 #endif
-public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers where TErrKind : struct, Enum
+public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, IDisposable where TErrKind : struct, Enum
 {
     /// <summary>
     /// Holds the value on success, otherwise default
@@ -150,6 +161,16 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
     public bool isOK => err == null;
 
     object? IUnionMembers.Value => isOK ? m_Value : err;
+
+    /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
+    /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
+    /// <param name="error">Receives the error when the Result failed</param>
+    public bool TryGetValue(out T? result, out Err<TErrKind>? error)
+    {
+        result = m_Value;
+        error = err;
+        return isOK;
+    }
 
     /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
     /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
@@ -203,6 +224,17 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
         ? $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.OK({m_Value})"
         : $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.Fail({err!.kind.ToString()})";
 
+    /// <summary>
+    /// Mark this result has been fully resolved.
+    /// </summary>
+    public void Dispose()
+    {
+        if (err != null)
+        {
+            Err<TErrKind>.Return(err);
+        }
+    }
+
     #region Fluent
 
     /// <summary>
@@ -211,7 +243,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
     /// and invokes <see cref="ErrBase.Panic"/> when it did not succeed
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    public T UnWarp() => isOK
+    public T Unwrap() => isOK
         ? value
         : throw err!.Panic(); // When !isOK, err is always non-null
 

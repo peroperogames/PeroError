@@ -2,11 +2,11 @@
  * Copyright (c) PeroPeroGames Co., Ltd.
  * Author: Gatongone
  * Created On: 2026/11/13
- * Description: Checks whether the Result returned by a function is discarded
+ * Description: Checks that every Result is consumed exactly once
  */
 
+using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -16,43 +16,36 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace PeroTools2.Error.Analyzers;
 
 /// <summary>
-/// Checks the case where a function returning <c>Result&lt;TErr&gt;</c> / <c>Result&lt;T, TErr&gt;</c>
-/// (or a wrapper such as <c>Task&lt;Result&gt;</c> / <c>UniTask&lt;Result&gt;</c>) is called but the
-/// returned value is not handled.<br/>
+/// Checks that every <c>Result&lt;TErr&gt;</c> / <c>Result&lt;T, TErr&gt;</c> value
+/// (including the ones carried by <c>Task</c> / <c>ValueTask</c> / <c>UniTask</c> / <c>Awaitable</c>)
+/// is consumed <b>exactly once</b>.
 /// </summary>
 /// <remarks>
+/// <para>A Result is consumed when, and only when:</para>
+/// <list type="number">
+/// <item>it is disposed in the current method — <c>using var r = ...</c>, <c>using (...) { }</c>
+/// or an explicit <c>r.Dispose()</c>;</item>
+/// <item>it is returned from the method (<c>return r;</c>, expression-bodied members and lambdas);</item>
+/// <item>it is passed as an argument to another method;</item>
+/// <item>its error is wrapped into a new error with <c>Err.Wrap</c> (<c>r.err.Wrap(...)</c>).</item>
+/// </list>
 /// <para>
-/// The criteria are aligned with Rust's <c>#[must_use]</c> + <c>unused_must_use</c> / <c>unused_variables</c>:
-/// it only checks whether the value is dropped, not whether the failure branch is really handled.
+/// Every other use — reading <c>isOK</c> / <c>err</c> / <c>value</c>, calling <c>Unwrap()</c> /
+/// <c>Match()</c> / <c>Switch()</c>, discarding it as a statement — does not consume the Result.
+/// A Result that is consumed twice would hand its error back to the pool twice, so double
+/// consumption is reported as well.
 /// </para>
-/// <para>Forms treated as "already handled" (no warning) and the corresponding Rust code:</para>
-/// <list type="bullet">
-/// <item>Passed out as a return value or an expression-bodied result
-/// (Rust: <c>return r;</c> or <c>?</c> propagation)</item>
-/// <item>Assigned to a variable, field or property and read afterwards (Rust: <c>let x = f(); x.is_ok()</c>)</item>
-/// <item>Passed as an argument to another function (Rust: <c>consume(f())</c>)</item>
-/// <item>Used in a condition, pattern match or switch (Rust: <c>if let Err(e) = f()</c> / <c>match</c>)</item>
-/// <item>Explicitly unwrapped: <c>.isOK</c> / <c>.err</c> / <c>.value</c> /
-/// <c>.UnWarp()</c> (Rust: <c>.unwrap()</c> / <c>.ok()</c>)</item>
-/// <item>Explicit discard: <c>_ = ...</c>, or a variable whose name starts with <c>_</c>
-/// (Rust: <c>let _ = ...;</c> / <c>let _x = ...;</c>)</item>
-/// </list>
-/// <para>Forms that warn, corresponding to Rust's <c>unused_must_use</c> / <c>unused_variables</c>:</para>
-/// <list type="bullet">
-/// <item>Discarded directly by an expression statement: <c>DoWork();</c> /
-/// <c>await DoWorkAsync();</c> (Rust: <c>f();</c>)</item>
-/// <item>Discarded by a void-returning expression-bodied method / accessor / lambda:
-/// <c>void M() =&gt; DoWork();</c></item>
-/// <item>Stored into a local variable whose name does not start with <c>_</c>, and never read
-/// afterwards (Rust: <c>let x = f();</c> with x unused)</item>
-/// </list>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 {
     /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
-        ImmutableArray.Create(Diagnostics.discardedResult, Diagnostics.unusedResultVariable);
+        ImmutableArray.Create(
+            Diagnostics.unconsumedResult,
+            Diagnostics.unconsumedResultVariable,
+            Diagnostics.doubleConsumedResult,
+            Diagnostics.unconsumedResultParameter);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -71,91 +64,205 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        // Every kind of body is analyzed once; nested lambdas / local functions get their own run
         context.RegisterSyntaxNodeAction(
-            ctx => AnalyzeExpressionStatement(ctx, resultTypes),
-            SyntaxKind.ExpressionStatement);
-
-        context.RegisterSyntaxNodeAction(
-            ctx => AnalyzeArrowExpressionClause(ctx, resultTypes),
-            SyntaxKind.ArrowExpressionClause);
-
-        context.RegisterSyntaxNodeAction(
-            ctx => AnalyzeExpressionBodiedLambda(ctx, resultTypes),
+            ctx => AnalyzeBody(ctx, resultTypes),
+            SyntaxKind.MethodDeclaration,
+            SyntaxKind.ConstructorDeclaration,
+            SyntaxKind.DestructorDeclaration,
+            SyntaxKind.OperatorDeclaration,
+            SyntaxKind.ConversionOperatorDeclaration,
+            SyntaxKind.PropertyDeclaration,
+            SyntaxKind.IndexerDeclaration,
+            SyntaxKind.FieldDeclaration,
+            SyntaxKind.EventFieldDeclaration,
+            SyntaxKind.LocalFunctionStatement,
             SyntaxKind.SimpleLambdaExpression,
-            SyntaxKind.ParenthesizedLambdaExpression);
-
-        context.RegisterSyntaxNodeAction(
-            ctx => AnalyzeLocalDeclaration(ctx, resultTypes),
-            SyntaxKind.LocalDeclarationStatement);
+            SyntaxKind.ParenthesizedLambdaExpression,
+            SyntaxKind.AnonymousMethodExpression);
     }
 
-    #region Expression statements
-
-    private static void AnalyzeExpressionStatement(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
+    /// <summary>Analyzes one body: the produced Results in it and the locals that hold them</summary>
+    private static void AnalyzeBody(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
     {
-        var statement = (ExpressionStatementSyntax)context.Node;
-        var expression = statement.Expression;
+        var model = context.SemanticModel;
+        var ct = context.CancellationToken;
 
-        // `_ = ...` is an explicit discard, so it counts as handled
-        if (expression is AssignmentExpressionSyntax assignment
-            && IsDiscard(assignment.Left, context.SemanticModel, context.CancellationToken))
+        var origins = new HashSet<ExpressionSyntax>();
+        var declarations = new List<LocalDeclarationStatementSyntax>();
+
+        foreach (var node in context.Node.DescendantNodes(
+                     // The node itself is always entered; nested function bodies get their own run
+                     descendIntoChildren: n => n == context.Node || !IsNestedFunction(n)))
+        {
+            switch (node)
+            {
+                case LocalDeclarationStatementSyntax declaration:
+                    declarations.Add(declaration);
+                    break;
+
+                case ExpressionSyntax expression
+                    when IsProducedValue(expression)
+                         && IsResultType(model.GetTypeInfo(expression, ct).Type, resultTypes):
+                    // Collapse chained / branched producers (await, ?:, parentheses, casts) into one value
+                    origins.Add(Unwrap(expression));
+                    break;
+            }
+        }
+
+        foreach (var origin in origins)
+        {
+            ReportIfNotConsumed(context, model, ct, origin);
+        }
+
+        foreach (var declaration in declarations)
+        {
+            AnalyzeLocalConsumption(context, declaration, resultTypes);
+        }
+
+        AnalyzeParameterConsumption(context, resultTypes);
+    }
+
+    /// <summary>Bodies of nested lambdas / local functions are analyzed by their own run</summary>
+    private static bool IsNestedFunction(SyntaxNode node) =>
+        node is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax;
+
+    #region Parameters
+
+    /// <summary>A Result that enters the method as a parameter is owned by the method as well</summary>
+    private static void AnalyzeParameterConsumption(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
+    {
+        var parameterList = context.Node switch
+        {
+            BaseMethodDeclarationSyntax method => method.ParameterList,
+            LocalFunctionStatementSyntax localFunction => localFunction.ParameterList,
+            _ => null,
+        };
+
+        if (parameterList == null)
         {
             return;
         }
 
-        ReportIfDiscardedResult(context, resultTypes, expression);
-    }
+        var model = context.SemanticModel;
+        var ct = context.CancellationToken;
 
-    private static bool IsDiscard(ExpressionSyntax target, SemanticModel model, CancellationToken ct) =>
-        target is IdentifierNameSyntax { Identifier.ValueText: "_" }
-        && model.GetSymbolInfo(target, ct).Symbol == null;
+        foreach (var parameter in parameterList.Parameters)
+        {
+            if (model.GetDeclaredSymbol(parameter, ct) is not IParameterSymbol symbol
+                || !IsDirectResultType(symbol.Type, resultTypes))
+            {
+                continue;
+            }
+
+            var consumptionSites = new List<SyntaxNode>(2);
+            CollectConsumptions(symbol, context.Node, model, ct, consumptionSites);
+            ReportConsumption(context, Diagnostics.unconsumedResultParameter, symbol.Name, parameter.Identifier.GetLocation(), consumptionSites);
+        }
+    }
 
     #endregion
 
-    #region Expression bodies
+    #region Consumption accounting
 
-    private static void AnalyzeArrowExpressionClause(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
+    /// <summary>Reports a Result that is never consumed, or consumed twice on the same path</summary>
+    private static void ReportConsumption(
+        SyntaxNodeAnalysisContext context,
+        DiagnosticDescriptor unconsumedDescriptor,
+        string name,
+        Location declarationLocation,
+        List<SyntaxNode> consumptionSites
+    )
     {
-        var arrow = (ArrowExpressionClauseSyntax)context.Node;
-
-        // The value on the right of the arrow is only discarded when the "host" returns void
-        // (properties / methods returning a Result pass the value out, so they are not discards)
-        if (context.SemanticModel.GetDeclaredSymbol(arrow.Parent, context.CancellationToken) is not IMethodSymbol { ReturnsVoid: true })
+        if (consumptionSites.Count == 0)
         {
+            context.ReportDiagnostic(Diagnostic.Create(unconsumedDescriptor, declarationLocation, name));
             return;
         }
 
-        ReportIfDiscardedResult(context, resultTypes, arrow.Expression);
+        // Consuming it in two branches of the same if/switch is fine: only one of them runs
+        for (int i = 0; i < consumptionSites.Count; i++)
+        {
+            for (int j = i + 1; j < consumptionSites.Count; j++)
+            {
+                if (AreMutuallyExclusive(consumptionSites[i], consumptionSites[j]))
+                {
+                    continue;
+                }
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.doubleConsumedResult,
+                    consumptionSites[j].GetLocation(),
+                    name));
+                return;
+            }
+        }
     }
 
-    private static void AnalyzeExpressionBodiedLambda(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
+    /// <summary>
+    /// Whether two places can never both run, because they sit in different branches of the same
+    /// <c>if</c> / <c>switch</c> / <c>?:</c>.
+    /// </summary>
+    private static bool AreMutuallyExclusive(SyntaxNode first, SyntaxNode second)
     {
-        var lambda = (LambdaExpressionSyntax)context.Node;
-        var body = lambda.ExpressionBody;
-        if (body == null)
+        var firstGuards = GetBranchGuards(first);
+        if (firstGuards.Count == 0)
         {
-            // Statements inside a block-bodied lambda are handled by AnalyzeExpressionStatement
-            return;
+            return false;
         }
 
-        var delegateType = context.SemanticModel.GetTypeInfo(lambda, context.CancellationToken).ConvertedType as INamedTypeSymbol;
-        if (delegateType?.DelegateInvokeMethod is not { ReturnsVoid: true })
+        var secondGuards = GetBranchGuards(second);
+        foreach (var guard in firstGuards)
         {
-            return;
+            if (secondGuards.TryGetValue(guard.Key, out int secondBranch) && secondBranch != guard.Value)
+            {
+                return true;
+            }
         }
 
-        ReportIfDiscardedResult(context, resultTypes, body);
+        return false;
+    }
+
+    /// <summary>The branch containers (and the branch index) a node sits in</summary>
+    private static Dictionary<SyntaxNode, int> GetBranchGuards(SyntaxNode node)
+    {
+        var guards = new Dictionary<SyntaxNode, int>();
+        for (var current = node; current != null; current = current.Parent)
+        {
+            switch (current.Parent)
+            {
+                case IfStatementSyntax ifStatement:
+                    guards[ifStatement] = ReferenceEquals(ifStatement.Statement, current) ? 1 : 2;
+                    break;
+
+                case ConditionalExpressionSyntax conditional:
+                    guards[conditional] = ReferenceEquals(conditional.WhenTrue, current) ? 1 : 2;
+                    break;
+
+                case SwitchStatementSyntax switchStatement when current is SwitchSectionSyntax section:
+                    guards[switchStatement] = switchStatement.Sections.IndexOf(section) + 1;
+                    break;
+            }
+        }
+
+        return guards;
     }
 
     #endregion
 
     #region Local variables
 
-    private static void AnalyzeLocalDeclaration(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
+    private static void AnalyzeLocalConsumption(
+        SyntaxNodeAnalysisContext context,
+        LocalDeclarationStatementSyntax statement,
+        ResultTypeInfo resultTypes
+    )
     {
-        var statement = (LocalDeclarationStatementSyntax)context.Node;
         var model = context.SemanticModel;
         var ct = context.CancellationToken;
+
+        // `using var r = ...;` and a declaration inside `using (...) { }` are consumed by the using
+        bool declaredWithUsing = statement.UsingKeyword != default || statement.Parent is UsingStatementSyntax;
 
         foreach (var declarator in statement.Declaration.Variables)
         {
@@ -164,16 +271,8 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            // Aligned with Rust: a name starting with '_' means "intentionally ignored", so no warning
-            // (corresponds to let _ = ...; and let _x = ...;)
-            string name = declarator.Identifier.ValueText;
-            if (name.Length > 0 && name[0] == '_')
-            {
-                continue;
-            }
-
-            var valueType = model.GetTypeInfo(declarator.Initializer.Value, ct).Type;
-            if (!resultTypes.TryGetResult(valueType, out _))
+            // Wrapper types (Task<Result> etc.) are reported where they are awaited or dropped
+            if (!IsDirectResultType(model.GetTypeInfo(declarator.Initializer.Value, ct).Type, resultTypes))
             {
                 continue;
             }
@@ -183,39 +282,35 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (IsReadSomewhere(local, statement, model, ct))
+            var consumptionSites = new List<SyntaxNode>(2);
+            if (declaredWithUsing)
             {
-                continue;
+                // A using declaration disposes the Result once, at the end of the scope
+                consumptionSites.Add(declarator);
             }
 
-            context.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.unusedResultVariable, declarator.Identifier.GetLocation(), local.Name));
+            CollectConsumptions(local, statement.Parent, model, ct, consumptionSites);
+            ReportConsumption(context, Diagnostics.unconsumedResultVariable, local.Name, declarator.Identifier.GetLocation(), consumptionSites);
         }
     }
 
-    /// <summary>Whether the local variable is read anywhere in the scope of its declaration</summary>
-    /// <remarks>
-    /// A local can only be referenced inside the block that declares it (or a nested one), so the
-    /// scan is limited to that block instead of the whole enclosing member.
-    /// Writes do not count as reads: <c>var r = Load(); r = Load();</c> drops the first Result and
-    /// must still be reported.
-    /// </remarks>
-    /// <param name="local">The local variable to look for</param>
-    /// <param name="declaration">The local declaration statement that declares it</param>
-    /// <param name="model">Semantic model used to tell apart locals with the same name</param>
-    /// <param name="ct">Cancellation token</param>
-    private static bool IsReadSomewhere(ILocalSymbol local, LocalDeclarationStatementSyntax declaration, SemanticModel model, CancellationToken ct)
+    /// <summary>Collects every place where the given symbol holding a Result is consumed</summary>
+    private static void CollectConsumptions(
+        ISymbol symbol,
+        SyntaxNode scope,
+        SemanticModel model,
+        CancellationToken ct,
+        List<SyntaxNode> consumptionSites
+    )
     {
-        var scope = declaration.Parent;
         if (scope == null)
         {
-            // Be conservative when no scope can be found and do not warn
-            return true;
+            return;
         }
 
         foreach (var node in scope.DescendantNodes())
         {
-            if (node is not IdentifierNameSyntax identifier || identifier.Identifier.ValueText != local.Name)
+            if (node is not IdentifierNameSyntax identifier || identifier.Identifier.ValueText != symbol.Name)
             {
                 continue;
             }
@@ -225,13 +320,16 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            if (SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, ct).Symbol, local))
+            if (!SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, ct).Symbol, symbol))
             {
-                return true;
+                continue;
+            }
+
+            if (IsConsumed(identifier, model, ct))
+            {
+                consumptionSites.Add(identifier);
             }
         }
-
-        return false;
     }
 
     /// <summary>Whether the identifier is only written to (assignment target or <c>out</c> argument)</summary>
@@ -250,44 +348,191 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
     #endregion
 
-    #region Utils
+    #region Consumption rules
 
-    private static void ReportIfDiscardedResult(
-        SyntaxNodeAnalysisContext context,
-        ResultTypeInfo resultTypes,
-        ExpressionSyntax expression
-    )
+    /// <summary>Whether the expression is a place where a fresh value comes into existence</summary>
+    private static bool IsProducedValue(ExpressionSyntax expression) =>
+        expression is InvocationExpressionSyntax
+            or AwaitExpressionSyntax
+            or ObjectCreationExpressionSyntax
+            or ConditionalAccessExpressionSyntax;
+
+    /// <summary>
+    /// Folds the expressions that carry a value further up without changing it, so the value is
+    /// judged by where it finally ends up.
+    /// </summary>
+    private static ExpressionSyntax Unwrap(ExpressionSyntax expression)
     {
-        // Only values produced by a call / creation are of interest: a bare identifier or a field
-        // access does not count as discarding a call result
-        if (!IsCallLike(expression))
+        var node = expression;
+        while (true)
         {
-            return;
+            switch (node.Parent)
+            {
+                case ParenthesizedExpressionSyntax parenthesized when parenthesized.Expression == node:
+                    node = parenthesized;
+                    continue;
+                case CastExpressionSyntax cast when cast.Expression == node:
+                    node = cast;
+                    continue;
+                case AwaitExpressionSyntax awaitExpression when awaitExpression.Expression == node:
+                    node = awaitExpression;
+                    continue;
+                case ConditionalExpressionSyntax conditional
+                    when conditional.WhenTrue == node || conditional.WhenFalse == node:
+                    node = conditional;
+                    continue;
+                case BinaryExpressionSyntax binary
+                    when binary.IsKind(SyntaxKind.CoalesceExpression) && binary.Right == node:
+                    node = binary;
+                    continue;
+                default:
+                    return node;
+            }
+        }
+    }
+
+    /// <summary>Whether the value of the expression is consumed by one of the four allowed ways</summary>
+    private static bool IsConsumed(ExpressionSyntax expression, SemanticModel model, CancellationToken ct)
+    {
+        var node = Unwrap(expression);
+
+        switch (node.Parent)
+        {
+            // Passed as an argument to another method
+            case ArgumentSyntax argument:
+                return argument.Parent is ArgumentListSyntax;
+
+            // Returned from the current method
+            case ReturnStatementSyntax:
+                return true;
+
+            case ArrowExpressionClauseSyntax arrow:
+                return !IsVoidReturning(arrow.Parent, model, ct);
+
+            case LambdaExpressionSyntax lambda:
+                return !IsVoidReturning(lambda, model, ct);
+
+            // Disposed by the using statement that owns it
+            case UsingStatementSyntax:
+                return true;
+
+            // Initializers are judged by the analysis of the field / local they are assigned to
+            case EqualsValueClauseSyntax:
+                return true;
+
+            // Assigned to an existing variable: the value lives on there. `_ = ...` is a discard and
+            // therefore does not consume anything.
+            case AssignmentExpressionSyntax assignment when assignment.Right == node:
+                return !IsDiscardTarget(assignment.Left);
+
+            // Dispose() or Err.Wrap on the result's error
+            case MemberAccessExpressionSyntax memberAccess when memberAccess.Expression == node:
+                return IsDisposeCall(memberAccess) || IsErrWrapCall(memberAccess, model, ct);
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Skips the null-forgiving operator (<c>!</c>) that may sit between two member accesses</summary>
+    private static ExpressionSyntax SkipNullForgiving(ExpressionSyntax expression)
+    {
+        while (expression.Parent is PostfixUnaryExpressionSyntax postfix
+               && postfix.IsKind(SyntaxKind.SuppressNullableWarningExpression)
+               && postfix.Operand == expression)
+        {
+            expression = postfix;
         }
 
-        var type = context.SemanticModel.GetTypeInfo(expression, context.CancellationToken).Type;
-        if (!resultTypes.TryGetResult(type, out _))
+        return expression;
+    }
+    private static bool IsDiscardTarget(ExpressionSyntax target) =>
+        target is IdentifierNameSyntax { Identifier.ValueText: "_" };
+
+    private static bool IsDisposeCall(MemberAccessExpressionSyntax memberAccess)
+    {
+        if (memberAccess.Name.Identifier.ValueText != "Dispose")
+        {
+            return false;
+        }
+
+        var receiver = SkipNullForgiving(memberAccess);
+        return receiver.Parent is InvocationExpressionSyntax invocation && invocation.Expression == receiver;
+    }
+
+    /// <summary>Detects <c>result.err.Wrap(...)</c>, which hands the error over to a new error</summary>
+    private static bool IsErrWrapCall(MemberAccessExpressionSyntax errAccess, SemanticModel model, CancellationToken ct)
+    {
+        if (errAccess.Name.Identifier.ValueText != "err")
+        {
+            return false;
+        }
+
+        var errorReceiver = SkipNullForgiving(errAccess);
+        if (errorReceiver.Parent is not MemberAccessExpressionSyntax wrapAccess
+            || wrapAccess.Expression != errorReceiver
+            || wrapAccess.Name.Identifier.ValueText != "Wrap")
+        {
+            return false;
+        }
+
+        var wrapReceiver = SkipNullForgiving(wrapAccess);
+        if (wrapReceiver.Parent is not InvocationExpressionSyntax invocation || invocation.Expression != wrapReceiver)
+        {
+            return false;
+        }
+
+        return model.GetSymbolInfo(invocation, ct).Symbol is IMethodSymbol { Name: "Wrap" };
+    }
+
+    /// <summary>Whether the owner of an expression body returns void (so the value is discarded)</summary>
+    private static bool IsVoidReturning(SyntaxNode owner, SemanticModel model, CancellationToken ct)
+    {
+        if (owner == null)
+        {
+            return false;
+        }
+
+        if (owner is LambdaExpressionSyntax lambda)
+        {
+            return model.GetTypeInfo(lambda, ct).ConvertedType
+                   is INamedTypeSymbol { DelegateInvokeMethod: { ReturnsVoid: true } };
+        }
+
+        return model.GetDeclaredSymbol(owner, ct) is IMethodSymbol { ReturnsVoid: true };
+    }
+
+    #endregion
+
+    #region Utils
+
+    private static bool IsResultType(ITypeSymbol type, ResultTypeInfo resultTypes) =>
+        type != null && resultTypes.TryGetResult(type, out _);
+
+    private static bool IsDirectResultType(ITypeSymbol type, ResultTypeInfo resultTypes) =>
+        type != null
+        && resultTypes.TryGetResult(type, out INamedTypeSymbol result)
+        && SymbolEqualityComparer.Default.Equals(type, result);
+
+    private static void ReportIfNotConsumed(
+        SyntaxNodeAnalysisContext context,
+        SemanticModel model,
+        CancellationToken ct,
+        ExpressionSyntax origin
+    )
+    {
+        if (IsConsumed(origin, model, ct))
         {
             return;
         }
 
         context.ReportDiagnostic(Diagnostic.Create(
-            Diagnostics.discardedResult, expression.GetLocation(), DescribeExpression(expression)));
+            Diagnostics.unconsumedResult,
+            origin.GetLocation(),
+            DescribeExpression(origin)));
     }
 
-    private static bool IsCallLike(ExpressionSyntax expression) => expression switch
-    {
-        InvocationExpressionSyntax => true,
-        ObjectCreationExpressionSyntax => true,
-        ConditionalAccessExpressionSyntax => true,
-        // The value produced by await is always dropped, no matter whether a call or a variable is awaited
-        AwaitExpressionSyntax => true,
-        ParenthesizedExpressionSyntax parenthesized => IsCallLike(parenthesized.Expression),
-        CastExpressionSyntax cast => IsCallLike(cast.Expression),
-        _ => false,
-    };
-
-    /// <summary>Produces a human-readable name for the diagnostic message</summary>
+    /// <summary>Human readable name used in the diagnostic message</summary>
     private static string DescribeExpression(ExpressionSyntax expression) => expression switch
     {
         AwaitExpressionSyntax awaitExpression => DescribeExpression(awaitExpression.Expression),

@@ -43,7 +43,7 @@ public enum IOErr
 
         string text = run.generated[0].SourceText.ToString();
         Assert.That(text, Does.Contain("public sealed class IOErr_NotFound : global::PeroTools2.Error.Err<global::IOErr>"));
-        Assert.That(text, Does.Contain("public string path { get; }"));
+        Assert.That(text, Does.Contain("public string path { get; private set; }"));
         Assert.That(text, Does.Contain("global::IOErr.NotFound,"));
         Assert.That(text, Does.Contain(@"msg ?? $""File {path} Do Not Exist"""));
         Assert.That(text, Does.Contain("Path that was not found"));
@@ -145,7 +145,7 @@ public enum IOErr
 
         AssertNoErrors(run);
         string text = run.generated[0].SourceText.ToString();
-        Assert.That(text, Does.Contain("public string @event { get; }"));
+        Assert.That(text, Does.Contain("public string @event { get; private set; }"));
         Assert.That(text, Does.Contain(@"msg ?? $""event {@event}"""));
     }
 
@@ -203,8 +203,8 @@ public enum IOErr
 
         var assembly = Emit(run.outputCompilation);
         var type = assembly.GetType("IOErr_NotFound", throwOnError: true);
-        var ctor = type.GetConstructors().Single();
-        var err = ctor.Invoke(new object[] { "/tmp/a.txt", "overridden", null, null, "MyMember", "MyFile.cs", 42 });
+        var factory = type.GetMethod("New", BindingFlags.Public | BindingFlags.Static);
+        var err = factory.Invoke(null, new object[] { "/tmp/a.txt", "overridden", null, null, "MyMember", "MyFile.cs", 42 });
 
         Assert.That(GetProperty(err, "message"), Is.EqualTo("overridden"));
         string text = err.ToString();
@@ -519,14 +519,16 @@ public enum IOErr
         return Assembly.Load(stream.ToArray());
     }
 
-    /// <summary>Builds a companion class through reflection, defaulting omitted arguments by type</summary>
+    /// <summary>Builds a companion class through its generated New factory, defaulting omitted arguments by type</summary>
     private static object CreateError(Assembly assembly, string typeName, params object[] args)
     {
         var type = assembly.GetType(typeName, throwOnError: true);
         Assert.That(type, Is.Not.Null, "Could not find the generated type " + typeName);
 
-        var ctor = type.GetConstructors().Single();
-        var parameters = ctor.GetParameters();
+        var factory = type.GetMethod("New", BindingFlags.Public | BindingFlags.Static);
+        Assert.That(factory, Is.Not.Null, "The generated type has no static New factory: " + typeName);
+
+        var parameters = factory.GetParameters();
         var all = new object[parameters.Length];
         for (int i = 0; i < parameters.Length; i++)
         {
@@ -536,7 +538,7 @@ public enum IOErr
                     ? Activator.CreateInstance(parameters[i].ParameterType)
                     : null;
         }
-        return ctor.Invoke(all);
+        return factory.Invoke(null, all);
     }
 
     private static object GetProperty(object target, string name)

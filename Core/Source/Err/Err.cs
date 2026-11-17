@@ -6,6 +6,7 @@
  */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -40,10 +41,8 @@ public static class Err
         [CallerLineNumber]
         int callerLineNumber = 0
     ) where TKind : struct, Enum =>
-        new(
-            kind, message, null!, null!,
-            new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber)
-        );
+        Err<TKind>.Rent(kind, message, null!, null!,
+            new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber));
 
     /// <summary>
     /// Wraps an underlying error into a new error.
@@ -64,7 +63,7 @@ public static class Err
         [CallerLineNumber]
         int callerLineNumber = 0
     ) where TKind : struct, Enum =>
-        new(
+        Err<TKind>.Rent(
             kind, message, causedBy, null!,
             new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber)
         );
@@ -119,7 +118,7 @@ public static class Err
         [CallerLineNumber]
         int callerLineNumber = 0
     ) where TKind : struct, Enum =>
-        new(
+        Err<TKind>.Rent(
             kind, message, null!, ex,
             new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber)
         );
@@ -130,18 +129,62 @@ public static class Err
 public class Err<TKind> : ErrBase where TKind : struct, Enum
 {
     /// <summary>Error enum value of the current error</summary>
-    public virtual TKind kind { get; }
+    public virtual TKind kind { get; private set; }
 
-    /// <inheritdoc cref="ErrBase.causedBy"/>
-    public override ErrBase? causedBy { get; }
+    /// <inheritdoc/>
+    public override ErrBase? causedBy => m_CausedBy;
 
-    /// <inheritdoc cref="ErrBase.message"/>
-    public override string message { get; }
+    /// <inheritdoc/>
+    public override string message => m_Message;
 
-    /// <inheritdoc cref="ErrBase.exception"/>
-    public override Exception? exception { get; }
+    /// <inheritdoc/>
+    public override Exception? exception => m_Exception;
 
-    private Lazy<IList<string>> notes { get; } = new(static () => new List<string>(5));
+    private ErrBase? m_CausedBy;
+    private string m_Message;
+    private Exception? m_Exception;
+
+    private Lazy<List<string>> notes { get; } = new(static () => new List<string>(5));
+
+    private static readonly ConcurrentStack<Err<TKind>> s_Pool = new();
+
+    internal static Err<TKind> Rent(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
+    {
+        if (s_Pool.TryPop(out var err))
+        {
+            err.Init(kind, message, causedBy, exception, callerInfo);
+        }
+        else
+        {
+            err = new Err<TKind>(kind, message, causedBy, exception, callerInfo);
+        }
+        return err;
+    }
+
+    internal static Err<TKind> Rent(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> stackTrace)
+    {
+        if (s_Pool.TryPop(out var err))
+        {
+            err.Init(kind, message, causedBy, exception, stackTrace);
+        }
+        else
+        {
+            err = new Err<TKind>(kind, message, causedBy, exception, stackTrace);
+        }
+        return err;
+    }
+
+    internal static void Return(Err<TKind> err)
+    {
+        err.Reset();
+        err.OnReturn();
+    }
+
+    /// <summary>
+    /// Called when the error goes back to the pool. A derived companion class overrides this to keep
+    /// its own pool, so instances of different companion classes never get mixed up.
+    /// </summary>
+    protected virtual void OnReturn() => s_Pool.Push(this);
 
     /// <summary>Simulates a stack trace with CallerInfo</summary>
     protected readonly List<CallerInfo> stackTrace;
@@ -153,23 +196,38 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     protected internal Err(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
     {
         this.kind = kind;
-        this.message = message;
-        this.causedBy = causedBy;
-        this.exception = exception;
+        m_Message = message;
+        m_CausedBy = causedBy;
+        m_Exception = exception;
         stackTrace = [callerInfo];
     }
 
-    /// <summary>Appends one frame of stack trace info</summary>
-    protected internal void AddStackTrace(CallerInfo callerInfo)
+    private Err(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> stackTrace)
     {
-        stackTrace.Add(callerInfo);
+        this.kind = kind;
+        m_Message = message;
+        m_CausedBy = causedBy;
+        m_Exception = exception;
+        this.stackTrace = stackTrace;
     }
+
+    /// <summary>Appends one frame of stack trace info</summary>
+    protected internal void AddStackTrace(CallerInfo callerInfo) => stackTrace.Add(callerInfo);
 
     /// <summary>
     /// Convenience conversion of this <see cref="Err{TKind}"/> to the companion class of the
     /// error enum (if any)
     /// </summary>
     public TErr CastTo<TErr>() where TErr : Err<TKind> => (TErr)this;
+
+    /// <summary>
+    /// Converts to a new <see cref="Err{TTo}"/> with new kind and message, which keeps stored Error info (causedBy/exception/stackTrace).
+    /// </summary>
+    /// <param name="targetKind">New error kind.</param>
+    /// <param name="newMessage">New message (using current message if null or empty).</param>
+    /// <typeparam name="TTo">New error kind type.</typeparam>
+    /// <returns>A new <see cref="Err{TTo}"/> with new kind and message, which keeps stored Error info (causedBy/exception/stackTrace).</returns>
+    public Err<TTo> CastTo<TTo>(TTo targetKind, string newMessage = "") where TTo : struct, Enum => Err<TTo>.Rent(targetKind, string.IsNullOrEmpty(newMessage) ? message : newMessage, causedBy!, exception!, stackTrace);
 
     /// <inheritdoc cref="ErrBase.Panic"/>
     public override Exception Panic() => new ManualPanicException(ToString()); // Direct throw loses the stack trace
@@ -243,5 +301,59 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
         var sb = new StringBuilder();
         WriteToStringBuilder(sb);
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// This error has been fully resolved.
+    /// </summary>
+    protected internal override void Reset()
+    {
+        if (notes.IsValueCreated)
+        {
+            notes.Value.Clear();
+        }
+        m_CausedBy = null;
+        m_Exception = null;
+        m_Message = string.Empty;
+        stackTrace.Clear();
+        var warped = causedBy;
+        while (warped != null)
+        {
+            warped.Reset();
+            warped = warped.causedBy;
+        }
+    }
+
+    // ReSharper disable ParameterHidesMember
+    /// <summary>Re-initializes a pooled instance before it is handed out again</summary>
+    /// <param name="kind">Error enum value</param>
+    /// <param name="message">Error message</param>
+    /// <param name="causedBy">Underlying error, when there is one</param>
+    /// <param name="exception">Underlying exception, when there is one</param>
+    /// <param name="callerInfo">Caller info of the frame that creates the error</param>
+    /// <remarks>Only called by the pooling machinery and by generated companion classes</remarks>
+    protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
+    {
+        this.kind = kind;
+        m_Message = message;
+        m_CausedBy = causedBy;
+        m_Exception = exception;
+        stackTrace.Add(callerInfo);
+    }
+
+    /// <summary>Re-initializes a pooled instance, keeping a whole stack trace</summary>
+    /// <param name="kind">Error enum value</param>
+    /// <param name="message">Error message</param>
+    /// <param name="causedBy">Underlying error, when there is one</param>
+    /// <param name="exception">Underlying exception, when there is one</param>
+    /// <param name="stackTrace">Stack trace to adopt</param>
+    /// <remarks>Only called by the pooling machinery</remarks>
+    protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> stackTrace)
+    {
+        this.kind = kind;
+        m_Message = message;
+        m_CausedBy = causedBy;
+        m_Exception = exception;
+        stackTrace.AddRange(stackTrace);
     }
 }

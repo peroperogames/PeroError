@@ -39,6 +39,9 @@ public abstract class ErrBase
 
     /// <summary>Adds extra information to the current error to describe it better</summary>
     protected internal abstract void AddNote(string note);
+
+    /// <summary>Reset error state.</summary>
+    protected internal abstract void Reset();
 }
 
 /// <summary>Fluent extension methods for <see cref="ErrBase"/></summary>
