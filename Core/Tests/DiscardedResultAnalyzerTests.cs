@@ -272,6 +272,23 @@ public static class Subject
     }
 
     [Test]
+    public void ReportsParameterUnwrappedTwiceTest()
+    {
+        // Any method of the Result consumes it, so unwrapping the same parameter twice is a double use
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static string Describe(Result<MyErr> value)
+    {
+        value.Unwrap();
+        value.Unwrap();
+        return null;
+    }
+}");
+
+        AssertIds(diagnostics, "PERR102");
+    }
+    [Test]
     public void ReportsParameterConsumedTwiceTest()
     {
         var diagnostics = Run(prelude + @"
