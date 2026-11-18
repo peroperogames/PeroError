@@ -38,7 +38,7 @@ public sealed class ErrTests
         var type = typeof(Err<TestErrKind>);
         const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
-        m_ExceptionField = type.GetField("<exception>k__BackingField", flags);
+        m_ExceptionField = type.GetField("m_Exception", flags);
         m_NotesField = type.GetField("<notes>k__BackingField", flags);
         m_StackTrace = type.GetField("stackTrace", flags);
 
@@ -111,7 +111,7 @@ public sealed class ErrTests
         Assert.That(GetNotes(m_Err).Value, Is.EquivalentTo(new[] { "note1", "note2" }));
         return;
 
-        Lazy<IList<string>> GetNotes(Err<TestErrKind> err) => (Lazy<IList<string>>)m_NotesField.GetValue(err);
+        Lazy<List<string>> GetNotes(Err<TestErrKind> err) => (Lazy<List<string>>)m_NotesField.GetValue(err);
     }
 
     [Test]
@@ -158,6 +158,114 @@ public sealed class ErrTests
         Assert.That(wrapped.message, Is.EqualTo("high"));
         Assert.That(wrapped.causedBy, Is.SameAs(lowLevel));
         Assert.That(lowLevel.causedBy, Is.Null);
+    }
+
+    [Test]
+    public void CastToKeepsStoredErrorInfoTest()
+    {
+        var exception = CreateExceptionWithStackTrace("CastToTest");
+        var root = exception.Wrap(TestErrKind.LowLevel, "root cause");
+        var source = root.Wrap(TestErrKind.MidLevel, "mid level").AddCallerFrame(); // two stack frames
+
+        var casted = source.CastTo(TestErrKind.HighLevel, "high level");
+
+        Assert.That(casted.kind, Is.EqualTo(TestErrKind.HighLevel));
+        Assert.That(casted.message, Is.EqualTo("high level"));
+        Assert.That(casted.causedBy, Is.SameAs(root));
+        Assert.That(casted.CausedByException(out var found), Is.True);
+        Assert.That(found, Is.SameAs(exception));
+        Assert.That(casted.ToString(), Does.Contain("high level"));
+    }
+
+    [Test]
+    public void CastToCopiesStackTraceTest()
+    {
+        // The two errors must not share one mutable frame list: clearing one would clear the other
+        var source = Err.New(TestErrKind.MidLevel, "mid level").AddCallerFrame();
+        var casted = source.CastTo(TestErrKind.HighLevel, "high level");
+
+        var sourceFrames = (List<CallerInfo>)m_StackTrace.GetValue(source);
+        var castedFrames = (List<CallerInfo>)m_StackTrace.GetValue(casted);
+
+        Assert.That(castedFrames, Is.Not.SameAs(sourceFrames));
+        Assert.That(castedFrames, Has.Count.EqualTo(sourceFrames.Count));
+        Assert.That(castedFrames, Is.EqualTo(sourceFrames));
+    }
+
+    [Test]
+    public void ErrorIsDisposableTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "disposable");
+        Assert.That(err, Is.InstanceOf<IDisposable>());
+
+        err.Dispose();
+
+        // Disposing hands the instance back to the pool, which clears it
+        Assert.That(err.message, Is.Empty);
+        Assert.That(err.causedBy, Is.Null);
+    }
+
+    [Test]
+    public void DisposeTwiceReturnsToPoolOnceTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "disposable");
+        err.Dispose();
+        err.Dispose(); // must not push the same instance into the pool a second time
+
+        var first = Err.New(TestErrKind.LowLevel, "first");
+        var second = Err.New(TestErrKind.LowLevel, "second");
+
+        // A second push would hand the very same instance out twice
+        Assert.That(second, Is.Not.SameAs(first));
+    }
+
+    [Test]
+    public void TwoResultsSharingAnErrorReturnItOnceTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "shared");
+#pragma warning disable PERR102 // two Results deliberately share one error to check the pool guard
+        Result<TestErrKind> first = err;
+        Result<TestErrKind> second = first;
+
+        first.Dispose();
+        second.Dispose(); // must be a no-op
+#pragma warning restore PERR102
+
+        var rentedFirst = Err.New(TestErrKind.LowLevel, "first");
+        var rentedSecond = Err.New(TestErrKind.LowLevel, "second");
+
+        Assert.That(rentedSecond, Is.Not.SameAs(rentedFirst));
+    }
+
+    [Test]
+    public void StaleResultCopyDoesNotReturnARentedErrorTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "first");
+#pragma warning disable PERR102 // the stale copy is disposed on purpose, to check that it is ignored
+        var stale = Result<TestErrKind>.Fail(err);
+        stale.Dispose(); // back into the pool
+
+        var live = Err.New(TestErrKind.LowLevel, "second");
+        stale.Dispose(); // stale copy of an earlier rent: must be ignored
+#pragma warning restore PERR102
+
+        Assert.That(live.message, Is.EqualTo("second")); // the live owner was not reset behind its back
+
+        var next = Err.New(TestErrKind.LowLevel, "third");
+        Assert.That(next, Is.Not.SameAs(live)); // and the instance was not handed out twice
+    }
+    [Test]
+    public void ReturnedErrorKeepsCausedByChainTest()
+    {
+        var root = Err.New(TestErrKind.LowLevel, "root");
+        var wrapper = root.Wrap(TestErrKind.HighLevel, "high");
+
+        wrapper.Dispose();
+
+        // Only the returned instance is cleared; the errors it points at belong to someone else
+        Assert.That(wrapper.causedBy, Is.Null);
+        Assert.That(root.message, Is.EqualTo("root"));
+        Assert.That(root.kind, Is.EqualTo(TestErrKind.LowLevel));
     }
 
     #region Utils

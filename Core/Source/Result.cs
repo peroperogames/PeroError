@@ -5,7 +5,9 @@
  * Description: Result Type For C#
  */
 
+#pragma warning disable CS0618 // Type or member is obsolete
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace PeroTools2.Error;
 
@@ -16,11 +18,12 @@ namespace PeroTools2.Error;
 #if NET11_0_OR_GREATER
 [System.Runtime.CompilerServices.Union]
 #endif
-public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where TErrKind : struct, Enum
+public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDisposable where TErrKind : struct, Enum
 {
     /// <summary>
     /// Holds the error info when failed (always present). Null when succeeded
     /// </summary>
+    [Obsolete("Don't use err directly.")]
     public Err<TErrKind>? err { get; }
 
     /// <summary>
@@ -28,11 +31,15 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
     /// </summary>
     public bool isOK => err == null; // Zero-constructible struct: no isOK field, so illegal states cannot exist
 
+    // The rent the error belongs to: a copy of this struct must not return an error that has already
+    // been handed out to somebody else in the meantime
+    private readonly int m_ErrVersion;
+
     object? IUnionMembers.Value => isOK ? Succeed.instance : err;
 
     /// <summary>Tries to get the error; returns true only when the Result failed</summary>
     /// <param name="value">Receives the error when the Result failed</param>
-    public bool TryGetValue(out Err<TErrKind>? value)
+    public bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? value)
     {
         value = err;
         return !isOK;
@@ -40,7 +47,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
 
     /// <summary>Tries to get the success marker; returns true only when the Result succeeded</summary>
     /// <param name="value">Receives the success marker when the Result succeeded</param>
-    public bool TryGetValue(out Succeed? value)
+    public bool TryGetValue([NotNullWhen(true)] out Succeed? value)
     {
         value = isOK ? Succeed.instance : null;
         return isOK;
@@ -53,6 +60,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
             return;
         }
         this.err = err;
+        m_ErrVersion = err.rentVersion;
     }
 
     /// <summary>Creates a successful Result</summary>
@@ -63,13 +71,14 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
 
     // Err => Result<T>
     /// <summary>Treats an error directly as a failed Result</summary>
+    /// <remarks>The Result takes ownership of the error: disposing it returns the error to the pool</remarks>
     public static implicit operator Result<TErrKind>(Err<TErrKind> err) => Fail(err);
 
     /// <summary>
     /// Asserts that the Result succeeded. Invokes <see cref="ErrBase.Panic"/> when it did not
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    public void UnWarp()
+    public void Unwrap()
     {
         if (!isOK) throw err!.Panic(); // When !isOK, err is always non-null
     }
@@ -113,10 +122,21 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
         object? Value { get; }
 
         /// <summary>Tries to get the error; returns true only when the Result failed</summary>
-        bool TryGetValue(out Err<TErrKind>? value);
+        bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? value);
 
         /// <summary>Tries to get the success marker; returns true only when the Result succeeded</summary>
-        bool TryGetValue(out Succeed? value);
+        bool TryGetValue([NotNullWhen(true)] out Succeed? value);
+    }
+
+    /// <summary>
+    /// Mark this result has been fully resolved.
+    /// </summary>
+    public void Dispose()
+    {
+        if (err != null)
+        {
+            Err<TErrKind>.Return(err, m_ErrVersion);
+        }
     }
 }
 
@@ -126,7 +146,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers where T
 #if NET11_0_OR_GREATER
 [System.Runtime.CompilerServices.Union]
 #endif
-public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers where TErrKind : struct, Enum
+public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, IDisposable where TErrKind : struct, Enum
 {
     /// <summary>
     /// Holds the value on success, otherwise default
@@ -136,20 +156,36 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
     /// <summary>
     /// Holds the error info when failed (always present). Null when succeeded
     /// </summary>
+    [Obsolete("Don't use err directly.")]
     public Err<TErrKind>? err { get; }
 
     /// <summary>
     /// State of the Result, succeeded or failed. When failed, err is always non-null
     /// </summary>
+    [Obsolete("Don't use value directly.")]
     public T value => isOK
-        ? m_Value
+        ? m_Value! // A successful Result created through OK() always carries a non-null value
         : throw new InvalidOperationException("Access Value From A Failed Result");
 
     /// <summary>State of the Result, succeeded or failed. When failed, err is always non-null</summary>
     // Structs are always zero-constructible, so no separate isOK field is used, to prevent illegal states
     public bool isOK => err == null;
 
+    // The rent the error belongs to: a copy of this struct must not return an error that has already
+    // been handed out to somebody else in the meantime
+    private readonly int m_ErrVersion;
+
     object? IUnionMembers.Value => isOK ? m_Value : err;
+
+    /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
+    /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
+    /// <param name="error">Receives the error when the Result failed</param>
+    public bool TryGetValue(out T? result, [NotNullWhen(false)] out Err<TErrKind>? error)
+    {
+        result = m_Value;
+        error = err;
+        return isOK;
+    }
 
     /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
     /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
@@ -161,7 +197,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
 
     /// <summary>Tries to get the error; returns true only when the Result failed</summary>
     /// <param name="error">Receives the error when the Result failed</param>
-    public bool TryGetValue(out Err<TErrKind>? error)
+    public bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? error)
     {
         error = err;
         return !isOK;
@@ -172,6 +208,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
         // Even a null success value is a successful Result, so the state is recorded unconditionally.
         m_Value = value;
         err = null;
+        m_ErrVersion = 0;
     }
 
     private Result(Err<TErrKind>? err)
@@ -180,6 +217,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
         {
             m_Value = default;
             this.err = err;
+            m_ErrVersion = err.rentVersion;
         }
     }
 
@@ -195,6 +233,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
 
     // Err => Result<T>
     /// <summary>Treats an error directly as a failed Result</summary>
+    /// <remarks>The Result takes ownership of the error: disposing it returns the error to the pool</remarks>
     public static implicit operator Result<T, TErrKind>(Err<TErrKind> err) => Fail(err);
 
     /// <summary>Formats the state of the Result for output</summary>
@@ -202,6 +241,17 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
     public override string ToString() => isOK
         ? $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.OK({m_Value})"
         : $"Result<{typeof(T).Name}, {typeof(TErrKind).Name}>.Fail({err!.kind.ToString()})";
+
+    /// <summary>
+    /// Mark this result has been fully resolved.
+    /// </summary>
+    public void Dispose()
+    {
+        if (err != null)
+        {
+            Err<TErrKind>.Return(err, m_ErrVersion);
+        }
+    }
 
     #region Fluent
 
@@ -211,14 +261,16 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
     /// and invokes <see cref="ErrBase.Panic"/> when it did not succeed
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    public T UnWarp() => isOK
+    public T Unwrap() => isOK
         ? value
         : throw err!.Panic(); // When !isOK, err is always non-null
 
     /// <summary>
     /// Returns the value when the Result succeeded, otherwise returns the default value
     /// </summary>
-    public T ValueOrDefault(T @default = default) => isOK ? value : @default;
+    /// <param name="default">Value used when the Result failed</param>
+    [return: MaybeNull]
+    public T ValueOrDefault([AllowNull] T @default = default) => isOK ? value : @default;
 
     /// <summary>
     /// Returns the value when the Result succeeded; otherwise calls the given function to handle
@@ -252,13 +304,21 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
     /// <summary>
     /// Casts Result&lt;T, TErrKind> to Result&lt;TR, TErrKind&gt;
     /// </summary>
+    /// <remarks>
+    /// On failure the returned Result takes over the error of this one, so this Result must not be
+    /// consumed afterwards — the same error would be handed back to the pool twice.
+    /// </remarks>
     public Result<TR, TErrKind> Cast<TR>() where TR : T => isOK
-        ? Result<TR, TErrKind>.OK((TR)value)
+        ? Result<TR, TErrKind>.OK((TR)value!)
         : Result<TR, TErrKind>.Fail(err!);
 
     /// <summary>
     /// Converts Result&lt;T, TErrKind> to Result&lt;TR, TErrKind&gt;
     /// </summary>
+    /// <remarks>
+    /// On failure the returned Result takes over the error of this one, so this Result must not be
+    /// consumed afterwards — the same error would be handed back to the pool twice.
+    /// </remarks>
     public Result<TR, TErrKind> Map<TR>(Func<T, TR> mapFunc) => isOK
         ? Result<TR, TErrKind>.OK(mapFunc.Invoke(value))
         : Result<TR, TErrKind>.Fail(err!);
@@ -281,6 +341,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers w
         bool TryGetValue(out T? result);
 
         /// <summary>Tries to get the error; returns true only when the Result failed</summary>
-        bool TryGetValue(out Err<TErrKind>? error);
+        bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? error);
     }
 }
+#pragma warning restore CS0618 // Type or member is obsolete

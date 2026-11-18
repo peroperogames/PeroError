@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFrameworks>net8.0;netstandard2.0;net11.0</TargetFrameworks>
+        <TargetFrameworks>net11.0;net8.0;netstandard2.1</TargetFrameworks>
         <IsPackable>true</IsPackable>
         <LangVersion>15</LangVersion>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -16,7 +16,7 @@
         <PackageTags>error;result;unity;error-handling</PackageTags>
         <RepositoryUrl>https://github.com/peroperogames/PeroError</RepositoryUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>
-        <Nullable>annotations</Nullable>
+        <Nullable>enable</Nullable>
         <Version>0.2.0</Version>
         <AssemblyVersion>0.2.0</AssemblyVersion>
         <FileVersion>0.2.0</FileVersion>
@@ -56,7 +56,7 @@
         </ItemGroup>
     </Target>
 
-    <Target Name="CopyUnityArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)'">
+    <Target Name="CopyUnityArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)' and '$(Configuration)' == '$(UnityArtifactConfiguration)'">
         <ItemGroup>
             <_UnityArtifact Include="$(TargetDir)$(AssemblyName).dll"/>
             <_UnityArtifact Include="$(TargetDir)$(AssemblyName).xml" Condition="Exists('$(TargetDir)$(AssemblyName).xml')"/>

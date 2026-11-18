@@ -8,6 +8,10 @@
 using System;
 using NUnit.Framework;
 
+// These tests verify the deprecated direct accessors and cache Results in fields on purpose
+#pragma warning disable PERR100 // Results are stored in fields on purpose here
+#pragma warning disable CS0618 // Type or member is obsolete
+
 namespace PeroTools2.Error.Tests;
 
 [TestFixture]
@@ -64,13 +68,13 @@ public class ResultTest
     }
 
     [Test]
-    public void UnWarpTest()
+    public void UnwrapTest()
     {
-        // UnWarp
-        Assert.That(m_SuccessResult.UnWarp(), Is.SameAs(success_message));
+        // Unwrap
+        Assert.That(m_SuccessResult.Unwrap(), Is.SameAs(success_message));
         Assert.Throws<ManualPanicException>(() =>
         {
-            string _ = m_FailedResult.UnWarp();
+            string _ = m_FailedResult.Unwrap();
         });
     }
 
@@ -88,6 +92,19 @@ public class ResultTest
         Assert.That(m_FailedResult.ValueOr(_ => defaultValue), Is.SameAs(defaultValue));
     }
 
+    [Test]
+    public void TryGetValueReportsNullSuccessValueTest()
+    {
+        // A successful Result may hold null, so the value does not deserve a [NotNullWhen] promise
+        var result = Result<string, TestErrKind>.OK(null);
+
+        Assert.That(result.TryGetValue(out var value, out var error), Is.True);
+        Assert.That(value, Is.Null);
+        Assert.That(error, Is.Null);
+
+        Assert.That(result.TryGetValue(out string onlyValue), Is.True);
+        Assert.That(onlyValue, Is.Null);
+    }
     [Test]
     public void MatchTest()
     {
@@ -144,6 +161,8 @@ public class ResultTest
         Assert.That(result.TryGetValue(out Err<TestErrKind> error), Is.False);
         Assert.That(error, Is.Null);
         Assert.That(result.ToString(), Does.Contain("OK"));
+
+        result.Dispose();
     }
 
     [Test]
@@ -157,6 +176,8 @@ public class ResultTest
         Assert.That(nullValue, Is.Null);
         Assert.That(result.TryGetValue(out Err<TestErrKind> _), Is.False);
         Assert.That(result.ToString(), Does.Contain("OK"));
+
+        result.Dispose();
     }
 }
 
@@ -175,6 +196,19 @@ public class ResultWithoutValueTest
         m_FailedResult = Result<TestErrKind>.Fail(Err.New(TestErrKind.HighLevel, failed_message));
     }
 
+    [Test]
+    public void TryGetValueReportsNullSuccessValueTest()
+    {
+        // A successful Result may hold null, so the value does not deserve a [NotNullWhen] promise
+        var result = Result<string, TestErrKind>.OK(null);
+
+        Assert.That(result.TryGetValue(out var value, out var error), Is.True);
+        Assert.That(value, Is.Null);
+        Assert.That(error, Is.Null);
+
+        Assert.That(result.TryGetValue(out string onlyValue), Is.True);
+        Assert.That(onlyValue, Is.Null);
+    }
     [Test]
     public void MatchTest()
     {

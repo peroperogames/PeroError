@@ -6,7 +6,11 @@
  */
 
 using System;
+using System.Reflection;
 using NUnit.Framework;
+
+// These tests verify the deprecated direct accessors, so using them here is intended
+#pragma warning disable CS0618 // Type or member is obsolete
 
 namespace PeroTools2.Error.Tests;
 
@@ -58,14 +62,20 @@ public sealed class ErrCompanionTests
 
         var pathProperty = type.GetProperty(nameof(CompanionErrKind_NotFound.path));
         Assert.That(pathProperty, Is.Not.Null);
-        Assert.That(pathProperty.CanWrite, Is.False);
+        // The value is only assigned by the generated New() factory
+        Assert.That(pathProperty.GetSetMethod(nonPublic: true), Is.Not.Null);
+        Assert.That(pathProperty.SetMethod.IsPublic, Is.False);
         Assert.That(pathProperty.PropertyType, Is.EqualTo(typeof(string)));
+
+        // No public constructor: instances come from the pooled New() factory
+        Assert.That(type.GetConstructors(), Is.Empty);
+        Assert.That(type.GetMethod("New", BindingFlags.Public | BindingFlags.Static), Is.Not.Null);
     }
 
     [Test]
     public void MessageAndArgumentsTest()
     {
-        var err = new CompanionErrKind_NotFound("/tmp/a.txt");
+        var err = CompanionErrKind_NotFound.New("/tmp/a.txt");
 
         Assert.That(err.kind, Is.EqualTo(CompanionErrKind.NotFound));
         Assert.That(err.path, Is.EqualTo("/tmp/a.txt"));
@@ -76,7 +86,7 @@ public sealed class ErrCompanionTests
     [Test]
     public void MultipleArgumentsAndFormatSpecifierTest()
     {
-        var err = new CompanionErrKind_Timeout("/tmp/b.txt", 1.5);
+        var err = CompanionErrKind_Timeout.New("/tmp/b.txt", 1.5);
 
         Assert.That(err.kind, Is.EqualTo(CompanionErrKind.Timeout));
         Assert.That(err.path, Is.EqualTo("/tmp/b.txt"));
@@ -87,7 +97,7 @@ public sealed class ErrCompanionTests
     [Test]
     public void MessageOverrideTest()
     {
-        var err = new CompanionErrKind_NotFound("/tmp/a.txt", msg: "custom message");
+        var err = CompanionErrKind_NotFound.New("/tmp/a.txt", msg: "custom message");
 
         Assert.That(err.message, Is.EqualTo("custom message"));
         Assert.That(err.path, Is.EqualTo("/tmp/a.txt"));
@@ -96,7 +106,7 @@ public sealed class ErrCompanionTests
     [Test]
     public void EscapedTemplateTest()
     {
-        var err = new CompanionErrKind_Escaped();
+        var err = CompanionErrKind_Escaped.New();
 
         Assert.That(err.message, Is.EqualTo("Literal {brace}, quote \" and back\\slash"));
     }
@@ -104,7 +114,7 @@ public sealed class ErrCompanionTests
     [Test]
     public void KeywordArgumentNameTest()
     {
-        var err = new CompanionErrKind_Keyword("click");
+        var err = CompanionErrKind_Keyword.New("click");
 
         // ReSharper disable once ArrangeThisQualifierIsRedundant
         Assert.That(err.@event, Is.EqualTo("click"));
@@ -114,7 +124,7 @@ public sealed class ErrCompanionTests
     [Test]
     public void CustomCompanionNameTest()
     {
-        var err = new CustomNamedCompanion(42);
+        var err = CustomNamedCompanion.New(42);
 
         Assert.That(err, Is.InstanceOf<Err<CompanionErrKind>>());
         Assert.That(err.kind, Is.EqualTo(CompanionErrKind.CustomNamed));
@@ -125,9 +135,9 @@ public sealed class ErrCompanionTests
     [Test]
     public void CausedByAndExceptionTest()
     {
-        var rootCause = new CompanionErrKind_NotFound("/tmp/a.txt");
+        var rootCause = CompanionErrKind_NotFound.New("/tmp/a.txt");
         var exception = new InvalidOperationException("boom");
-        var err = new CompanionErrKind_Timeout("/tmp/b.txt", 0.5, causedBy: rootCause, ex: exception);
+        var err = CompanionErrKind_Timeout.New("/tmp/b.txt", 0.5, causedBy: rootCause, ex: exception);
 
         Assert.That(err.causedBy, Is.SameAs(rootCause));
         Assert.That(err.exception, Is.SameAs(exception));
@@ -145,7 +155,7 @@ public sealed class ErrCompanionTests
     public void CallerInfoIsCapturedTest()
     {
         // The companion constructor already has optional [CallerMemberName] parameters, no need to pass them
-        var err = new CompanionErrKind_NotFound("/tmp/a.txt");
+        var err = CompanionErrKind_NotFound.New("/tmp/a.txt");
         string expectedMember = CurrentMember();
 
         err.AddNote("a note");
@@ -158,15 +168,33 @@ public sealed class ErrCompanionTests
     [Test]
     public void PanicTest()
     {
-        var err = new CompanionErrKind_NotFound("/tmp/a.txt");
+        var err = CompanionErrKind_NotFound.New("/tmp/a.txt");
 
         Assert.Catch<ManualPanicException>(() => throw err.Panic());
     }
 
     [Test]
+    public void NewReusesPooledInstanceTest()
+    {
+        var first = CompanionErrKind_NotFound.New("/tmp/a.txt");
+        Result<string, CompanionErrKind> held = first; // the Result takes ownership of the error
+        held.Dispose(); // releases it back to the companion class's pool
+
+        var second = CompanionErrKind_NotFound.New("/tmp/b.txt");
+
+        Assert.That(second, Is.SameAs(first));
+        Assert.That(second.path, Is.EqualTo("/tmp/b.txt"));
+        Assert.That(second.message, Is.EqualTo("File /tmp/b.txt Do Not Exist"));
+        Assert.That(second.causedBy, Is.Null);
+
+        Result<string, CompanionErrKind> heldAgain = second;
+        heldAgain.Dispose();
+    }
+
+    [Test]
     public void ImplicitConversionToResultTest()
     {
-        Result<string, CompanionErrKind> result = new CompanionErrKind_NotFound("/tmp/a.txt");
+        Result<string, CompanionErrKind> result = CompanionErrKind_NotFound.New("/tmp/a.txt");
 
         Assert.That(result.isOK, Is.False);
         Assert.That(result.err, Is.InstanceOf<CompanionErrKind_NotFound>());
@@ -174,9 +202,37 @@ public sealed class ErrCompanionTests
     }
 
     [Test]
+    public void CompanionErrorIsDisposableTest()
+    {
+        using (var err = CompanionErrKind_NotFound.New("/tmp/a.txt"))
+        {
+            Assert.That(err.path, Is.EqualTo("/tmp/a.txt"));
+        }
+    }
+
+    [Test]
+    public void ReturnedCompanionDropsArgumentsTest()
+    {
+        var err = CompanionErrKind_NotFound.New("/tmp/a.txt");
+        Result<string, CompanionErrKind> held = err;
+        held.Dispose(); // back into this class's pool
+
+        // The pooled instance must not keep the data the error was created with
+        var pathProperty = typeof(CompanionErrKind_NotFound).GetProperty(nameof(CompanionErrKind_NotFound.path));
+        Assert.That(pathProperty, Is.Not.Null);
+        Assert.That(pathProperty.GetValue(err), Is.Null);
+        Assert.That(err.ToString(), Does.Not.Contain("/tmp/a.txt"));
+
+        // A later New() must fill every argument again
+        var reused = CompanionErrKind_NotFound.New("/tmp/b.txt");
+        Assert.That(reused, Is.SameAs(err));
+        Assert.That(reused.path, Is.EqualTo("/tmp/b.txt"));
+    }
+
+    [Test]
     public void CastToCompanionTest()
     {
-        Err<CompanionErrKind> err = new CompanionErrKind_NotFound("/tmp/a.txt");
+        Err<CompanionErrKind> err = CompanionErrKind_NotFound.New("/tmp/a.txt");
         var casted = err.CastTo<CompanionErrKind_NotFound>();
 
         Assert.That(casted.path, Is.EqualTo("/tmp/a.txt"));

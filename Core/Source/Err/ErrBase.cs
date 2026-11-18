@@ -32,13 +32,16 @@ public abstract class ErrBase
 
     /// <summary>Checks whether the error chain contains an exception.</summary>
     /// <param name="ex">Receives the exception when there is one</param>
-    public abstract bool CausedByException(out Exception ex);
+    public abstract bool CausedByException(out Exception? ex);
 
     /// <summary>Formats this instance and writes it into the StringBuilder</summary>
     protected internal abstract void WriteToStringBuilder(StringBuilder sb);
 
     /// <summary>Adds extra information to the current error to describe it better</summary>
     protected internal abstract void AddNote(string note);
+
+    /// <summary>Reset error state.</summary>
+    protected internal abstract void Reset();
 }
 
 /// <summary>Fluent extension methods for <see cref="ErrBase"/></summary>
