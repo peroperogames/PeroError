@@ -79,17 +79,23 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
     /// Asserts that the Result succeeded. Invokes <see cref="ErrBase.Panic"/> when it did not
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    /// <remarks>This call takes the Result over: the error is returned to the pool before the panic is thrown</remarks>
+    /// <remarks>
+    /// This call takes the Result over: it is disposed on both paths. A failed Result hands its error
+    /// back to the pool (the panic already holds the full text), a successful one has nothing to return.
+    /// </remarks>
     public void Unwrap()
     {
-        if (isOK)
+        try
         {
-            return;
+            if (!isOK)
+            {
+                throw err!.Panic(); // When !isOK, err is always non-null; the panic snapshots the text
+            }
         }
-
-        var panic = err!.Panic(); // When !isOK, err is always non-null
-        Dispose(); // The panic already holds the full error text, so the instance can go back
-        throw panic;
+        finally
+        {
+            Dispose();
+        }
     }
 
     /// <summary>
@@ -271,34 +277,42 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
     /// and invokes <see cref="ErrBase.Panic"/> when it did not succeed
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    /// <remarks>This call takes the Result over: the error is returned to the pool before the panic is thrown</remarks>
+    /// <remarks>
+    /// This call takes the Result over: it is disposed on both paths. A failed Result hands its error
+    /// back to the pool (the panic already holds the full text), a successful one has nothing to return.
+    /// </remarks>
     public T Unwrap()
     {
-        if (isOK)
+        try
         {
-            return value;
+            // When !isOK, err is always non-null; the panic snapshots the text before the dispose below
+            return isOK ? value : throw err!.Panic();
         }
-
-        var panic = err!.Panic(); // When !isOK, err is always non-null
-        Dispose(); // The panic already holds the full error text, so the instance can go back
-        throw panic;
+        finally
+        {
+            Dispose();
+        }
     }
 
     /// <summary>
     /// Returns the value when the Result succeeded, otherwise returns the default value
     /// </summary>
     /// <param name="default">Value used when the Result failed</param>
-    /// <remarks>This call takes the Result over: the error is dropped, so it is returned to the pool</remarks>
+    /// <remarks>
+    /// This call takes the Result over: it is disposed on both paths, and a failed Result's error is
+    /// dropped here instead of being handed on.
+    /// </remarks>
     [return: MaybeNull]
     public T ValueOrDefault([AllowNull] T @default = default)
     {
-        if (isOK)
+        try
         {
-            return value;
+            return isOK ? value : @default;
         }
-
-        Dispose();
-        return @default;
+        finally
+        {
+            Dispose();
+        }
     }
 
     /// <summary>
