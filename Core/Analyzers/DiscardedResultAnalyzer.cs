@@ -260,7 +260,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 IfStatementSyntax ifStatement when ReferenceEquals(ifStatement.Statement, current)
                     => ifStatement.Statement,
 
-                ElseClauseSyntax { Parent: IfStatementSyntax ifStatement } elseClause
+                ElseClauseSyntax { Parent: IfStatementSyntax } elseClause
                     when ReferenceEquals(elseClause.Statement, current) => elseClause.Statement,
 
                 SwitchStatementSyntax when current is SwitchSectionSyntax section => section,
@@ -629,7 +629,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
     private static bool IsDirectResultType(ITypeSymbol? type, ResultTypeInfo resultTypes) =>
         type != null
-        && resultTypes.TryGetResult(type, out INamedTypeSymbol result)
+        && resultTypes.TryGetResult(type, out var result)
         && SymbolEqualityComparer.Default.Equals(type, result);
 
     private static void ReportIfNotConsumed(

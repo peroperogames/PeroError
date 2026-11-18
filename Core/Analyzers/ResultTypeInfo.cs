@@ -27,7 +27,7 @@ internal sealed class ResultTypeInfo
     /// Returns null when the compilation does not reference PeroTools2.PeroError;
     /// the analyzer then exits immediately.
     /// </summary>
-    public static ResultTypeInfo TryCreate(Compilation compilation)
+    public static ResultTypeInfo? TryCreate(Compilation compilation)
     {
         var definitions = ImmutableArray.CreateBuilder<INamedTypeSymbol>(2);
 
@@ -46,7 +46,7 @@ internal sealed class ResultTypeInfo
     /// <summary>Whether the type itself, or the content it wraps, is a Result</summary>
     /// <param name="type">The type to check</param>
     /// <param name="result">The Result type left after the async wrappers are peeled off</param>
-    public bool TryGetResult(ITypeSymbol type, out INamedTypeSymbol result)
+    public bool TryGetResult(ITypeSymbol type, out INamedTypeSymbol? result)
     {
         result = null;
 
