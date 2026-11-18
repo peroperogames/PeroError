@@ -13,7 +13,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/peroperogames/PeroError.git"
+    "url": "https://github.com/peroperogames/PeroError.git",
+    "directory": "Unity"
   },
   "author": {
     "name": "peropero",
