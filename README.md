@@ -30,7 +30,7 @@ Append following content to `Packages/manifest.json`:
 {
   "dependencies":
   {
-    "com.prpr.error": "https://github.com/peroperogames/PeroError.git#0.2.0"
+    "com.prpr.error": "https://github.com/peroperogames/PeroError.git#0.3.0"
   }
 }
 ```
@@ -49,7 +49,7 @@ Append following content to `Packages/manifest.json`:
   ],
   "dependencies":
   {
-    "com.prpr.error": "0.2.0"
+    "com.prpr.error": "0.3.0"
   }
 }
 ```
@@ -68,7 +68,7 @@ Append following content to `Packages/manifest.json`:
   ],
   "dependencies":
   {
-    "com.prpr.error": "0.2.0"
+    "com.prpr.error": "0.3.0"
   }
 }
 ```

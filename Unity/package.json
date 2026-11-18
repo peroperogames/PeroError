@@ -1,7 +1,7 @@
 {
   "name": "com.prpr.error",
   "displayName": "PeroError",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "unity": "2021.3",
   "description": "An error handle extension package for Unity",
   "documentationUrl": "https://github.com/peroperogames/PeroError/blob/master/README.md",
