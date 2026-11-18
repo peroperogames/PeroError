@@ -10,14 +10,14 @@ Append following content to project file (`.csproj`):
 
 ```xml
 <ItemGroup>
-    <PackageReference Include="PeroTools2.PeroError" Version="0.2.0" />
+    <PackageReference Include="PeroTools2.PeroError" Version="0.3.0" />
 </ItemGroup>
 ```
 
 Or install via CLI:
 
 ```sh
-dotnet add package PeroTools2.PeroError --version 0.2.0
+dotnet add package PeroTools2.PeroError --version 0.3.0
 ```
 
 ### Unity
