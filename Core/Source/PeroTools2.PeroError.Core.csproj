@@ -56,7 +56,7 @@
         </ItemGroup>
     </Target>
 
-    <Target Name="CopyUnityArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)'">
+    <Target Name="CopyUnityArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityTargetFramework)' and '$(Configuration)' == '$(UnityArtifactConfiguration)'">
         <ItemGroup>
             <_UnityArtifact Include="$(TargetDir)$(AssemblyName).dll"/>
             <_UnityArtifact Include="$(TargetDir)$(AssemblyName).xml" Condition="Exists('$(TargetDir)$(AssemblyName).xml')"/>

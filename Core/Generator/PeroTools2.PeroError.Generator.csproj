@@ -32,7 +32,7 @@
         <AdditionalFiles Include="AnalyzerReleases.Unshipped.md"/>
     </ItemGroup>
 
-    <Target Name="CopyUnityRoslynArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityRoslynTargetFramework)'">
+    <Target Name="CopyUnityRoslynArtifacts" AfterTargets="Build" Condition="'$(TargetFramework)' == '$(UnityRoslynTargetFramework)' and '$(Configuration)' == '$(UnityArtifactConfiguration)'">
         <ItemGroup>
             <_UnityRoslynArtifact Include="$(TargetDir)$(AssemblyName).dll"/>
         </ItemGroup>
