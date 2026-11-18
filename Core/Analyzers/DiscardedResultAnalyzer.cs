@@ -7,6 +7,7 @@
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -32,14 +33,17 @@ namespace PeroTools2.Error.Analyzers;
 /// </list>
 /// <para>
 /// Every other use — reading <c>isOK</c> / <c>err</c> / <c>value</c>, calling <c>Unwrap()</c> /
-/// <c>Match()</c> / <c>Switch()</c>, discarding it as a statement — does not consume the Result.
+/// <c>Match()</c> / <c>Switch()</c>, discarding it as a statement, storing it in a field or property,
+/// or awaiting a wrapper only to drop the value — does not consume the Result.
 /// A Result that is consumed twice would hand its error back to the pool twice, so double
-/// consumption is reported as well.
+/// consumption is reported as well; assigning over a Result (<c>r = Load();</c>) drops the value it
+/// held, which has its own diagnostic.
 /// </para>
 /// <para>
 /// Consuming it in two places that can never both run is not double consumption: the two branches
 /// of one <c>if</c> / <c>switch</c> / <c>?:</c>, and the code after a branch that ends with
-/// <c>return</c> or <c>throw</c>.
+/// <c>return</c> or <c>throw</c>. Results passed as <c>ref</c> / <c>out</c> / <c>in</c> parameters
+/// stay owned by the caller and are not analyzed.
 /// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -51,7 +55,8 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             Diagnostics.unconsumedResult,
             Diagnostics.unconsumedResultVariable,
             Diagnostics.doubleConsumedResult,
-            Diagnostics.unconsumedResultParameter);
+            Diagnostics.unconsumedResultParameter,
+            Diagnostics.overwrittenResult);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -121,12 +126,24 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             ReportIfNotConsumed(context, model, ct, origin);
         }
 
-        foreach (var declaration in declarations)
+        // All identifiers of the body are collected once, so every local / parameter resolves against
+        // this list instead of walking the body again. Nested bodies are included on purpose: a Result
+        // captured by a lambda has been used.
+        var identifiers = new List<IdentifierNameSyntax>();
+        foreach (var node in context.Node.DescendantNodes())
         {
-            AnalyzeLocalConsumption(context, declaration, resultTypes);
+            if (node is IdentifierNameSyntax identifier)
+            {
+                identifiers.Add(identifier);
+            }
         }
 
-        AnalyzeParameterConsumption(context, resultTypes);
+        foreach (var declaration in declarations)
+        {
+            AnalyzeLocalConsumption(context, declaration, resultTypes, identifiers);
+        }
+
+        AnalyzeParameterConsumption(context, resultTypes, identifiers);
     }
 
     /// <summary>Bodies of nested lambdas / local functions are analyzed by their own run</summary>
@@ -136,7 +153,11 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     #region Parameters
 
     /// <summary>A Result that enters the method as a parameter is owned by the method as well</summary>
-    private static void AnalyzeParameterConsumption(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
+    private static void AnalyzeParameterConsumption(
+        SyntaxNodeAnalysisContext context,
+        ResultTypeInfo resultTypes,
+        List<IdentifierNameSyntax> identifiers
+    )
     {
         // A declaration without a body (an interface member, an abstract / extern method, or the
         // declaration half of a partial method) has no implementation that could consume anything
@@ -163,14 +184,20 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         foreach (var parameter in parameterList.Parameters)
         {
             var symbol = model.GetDeclaredSymbol(parameter, ct);
-            if (symbol == null || !IsDirectResultType(symbol.Type, resultTypes))
+            if (symbol == null
+                // ref / out / in parameters stay owned by the caller (Try-pattern, in-arguments)
+                || symbol.RefKind != RefKind.None
+                || !IsDirectResultType(symbol.Type, resultTypes))
             {
                 continue;
             }
 
             var consumptionSites = new List<SyntaxNode>(2);
-            CollectConsumptions(symbol, context.Node, model, ct, consumptionSites);
-            ReportConsumption(context, Diagnostics.unconsumedResultParameter, symbol.Name, parameter.Identifier.GetLocation(), consumptionSites);
+            var overwrites = new List<SyntaxNode>(1);
+            CollectConsumptions(symbol, identifiers, model, ct, consumptionSites, overwrites);
+            ReportConsumption(
+                context, Diagnostics.unconsumedResultParameter, symbol.Name,
+                parameter.Identifier.GetLocation(), consumptionSites, overwrites);
         }
     }
 
@@ -178,18 +205,29 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
     #region Consumption accounting
 
-    /// <summary>Reports a Result that is never consumed, or consumed twice on the same path</summary>
+    /// <summary>Reports a Result that is never consumed, dropped by an assignment, or consumed twice</summary>
     private static void ReportConsumption(
         SyntaxNodeAnalysisContext context,
         DiagnosticDescriptor unconsumedDescriptor,
         string name,
         Location declarationLocation,
-        List<SyntaxNode> consumptionSites
+        List<SyntaxNode> consumptionSites,
+        List<SyntaxNode> overwrites
     )
     {
         if (consumptionSites.Count == 0)
         {
             context.ReportDiagnostic(Diagnostic.Create(unconsumedDescriptor, declarationLocation, name));
+            return;
+        }
+
+        // Assigning over the value drops the error that was held before: it never returns to the pool
+        if (overwrites.Count > 0)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.overwrittenResult,
+                overwrites[0].GetLocation(),
+                name));
             return;
         }
 
@@ -339,7 +377,8 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     private static void AnalyzeLocalConsumption(
         SyntaxNodeAnalysisContext context,
         LocalDeclarationStatementSyntax statement,
-        ResultTypeInfo resultTypes
+        ResultTypeInfo resultTypes,
+        List<IdentifierNameSyntax> identifiers
     )
     {
         var model = context.SemanticModel;
@@ -355,57 +394,95 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            // Wrapper types (Task<Result> etc.) are reported where they are awaited or dropped
-            if (!IsDirectResultType(model.GetTypeInfo(declarator.Initializer.Value, ct).Type, resultTypes))
+            var local = model.GetDeclaredSymbol(declarator, ct);
+            if (local is not ILocalSymbol localSymbol)
             {
                 continue;
             }
 
-            if (model.GetDeclaredSymbol(declarator, ct) is not ILocalSymbol local)
+            // The declared type is what the local ends up holding: the implicit conversion from
+            // Err<T> or from T happens in the declaration, not in the initializer expression
+            if (!IsDirectResultType(localSymbol.Type, resultTypes))
             {
+                // Wrappers (Task<Result> etc.) are fine when they are awaited or handed on; a wrapper
+                // that is only stored loses both the task and the Result it would have produced
+                if (IsResultType(localSymbol.Type, resultTypes) && !IsAwaitedOrHandedOff(localSymbol, identifiers, model, ct))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.unconsumedResult,
+                        declarator.Initializer.Value.GetLocation(),
+                        DescribeExpression(declarator.Initializer.Value)));
+                }
+
                 continue;
             }
 
             var consumptionSites = new List<SyntaxNode>(2);
+            var overwrites = new List<SyntaxNode>(1);
             if (declaredWithUsing)
             {
                 // A using declaration disposes the Result once, at the end of the scope
                 consumptionSites.Add(declarator);
             }
 
-            CollectConsumptions(local, statement.Parent, model, ct, consumptionSites);
-            ReportConsumption(context, Diagnostics.unconsumedResultVariable, local.Name, declarator.Identifier.GetLocation(), consumptionSites);
+            CollectConsumptions(localSymbol, identifiers, model, ct, consumptionSites, overwrites);
+            ReportConsumption(
+                context, Diagnostics.unconsumedResultVariable, localSymbol.Name,
+                declarator.Identifier.GetLocation(), consumptionSites, overwrites);
         }
+    }
+
+    /// <summary>
+    /// Whether a wrapper local (<c>Task&lt;Result&gt;</c> / <c>UniTask&lt;Result&gt;</c> ...) is used:
+    /// awaited, returned or passed on.
+    /// </summary>
+    private static bool IsAwaitedOrHandedOff(
+        ISymbol localSymbol,
+        List<IdentifierNameSyntax> identifiers,
+        SemanticModel model,
+        CancellationToken ct
+    )
+    {
+        foreach (var identifier in identifiers)
+        {
+            if (identifier.Identifier.ValueText != localSymbol.Name
+                || !SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, ct).Symbol, localSymbol))
+            {
+                continue;
+            }
+
+            if (identifier.Ancestors().OfType<AwaitExpressionSyntax>().Any()
+                || IsHandedOffValue(identifier, model, ct))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Collects every place where the given symbol holding a Result is consumed</summary>
     private static void CollectConsumptions(
         ISymbol symbol,
-        SyntaxNode? scope,
+        List<IdentifierNameSyntax> identifiers,
         SemanticModel model,
         CancellationToken ct,
-        List<SyntaxNode> consumptionSites
+        List<SyntaxNode> consumptionSites,
+        List<SyntaxNode> overwrites
     )
     {
-        if (scope == null)
+        // The name is filtered before GetSymbolInfo, which is the expensive query
+        foreach (var identifier in identifiers)
         {
-            return;
-        }
-
-        foreach (var node in scope.DescendantNodes())
-        {
-            if (node is not IdentifierNameSyntax identifier || identifier.Identifier.ValueText != symbol.Name)
+            if (identifier.Identifier.ValueText != symbol.Name
+                || !SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, ct).Symbol, symbol))
             {
                 continue;
             }
 
             if (IsWriteTarget(identifier))
             {
-                continue;
-            }
-
-            if (!SymbolEqualityComparer.Default.Equals(model.GetSymbolInfo(identifier, ct).Symbol, symbol))
-            {
+                overwrites.Add(identifier);
                 continue;
             }
 
@@ -416,7 +493,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         }
     }
 
-    /// <summary>Whether the identifier is only written to (assignment target or <c>out</c> argument)</summary>
+    /// <summary>Whether the identifier is written to instead of read (assignment target or <c>out</c> argument)</summary>
     private static bool IsWriteTarget(IdentifierNameSyntax identifier)
     {
         if (identifier.Parent is AssignmentExpressionSyntax assignment
@@ -500,14 +577,20 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             case UsingStatementSyntax:
                 return true;
 
-            // Initializers are judged by the analysis of the field / local they are assigned to
-            case EqualsValueClauseSyntax:
-                return true;
+            // Initializers are judged by the analysis of the local they are assigned to. A field or
+            // property initializer has no such analysis, so the Result stored there is not consumed:
+            // its error would sit in the member and never return to the pool.
+            case EqualsValueClauseSyntax equalsValue:
+                return !IsMemberInitializer(equalsValue);
 
             // Assigned to an existing variable: the value lives on there. `_ = ...` is a discard and
-            // therefore does not consume anything.
+            // assigning over a field / property drops the error instead of returning it.
             case AssignmentExpressionSyntax assignment when assignment.Right == node:
-                return !IsDiscardTarget(assignment.Left);
+                return !IsDiscardTarget(assignment.Left) && !IsMemberTarget(assignment.Left, model, ct);
+
+            // `yield return` hands the value to whoever enumerates the iterator
+            case YieldStatementSyntax:
+                return true;
 
             // Dispose() on the Result, or its error being handed over
             case MemberAccessExpressionSyntax memberAccess when memberAccess.Expression == node:
@@ -532,6 +615,18 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     }
     private static bool IsDiscardTarget(ExpressionSyntax target) =>
         target is IdentifierNameSyntax { Identifier.ValueText: "_" };
+
+    /// <summary>Whether the value is stored in a field / property initializer</summary>
+    private static bool IsMemberInitializer(EqualsValueClauseSyntax equalsValue) => equalsValue.Parent switch
+    {
+        PropertyDeclarationSyntax => true,
+        VariableDeclaratorSyntax { Parent: VariableDeclarationSyntax { Parent: FieldDeclarationSyntax } } => true,
+        _ => false,
+    };
+
+    /// <summary>Whether the assignment target is a field / property, so the value is stored in a member</summary>
+    private static bool IsMemberTarget(ExpressionSyntax target, SemanticModel model, CancellationToken ct) =>
+        model.GetSymbolInfo(target, ct).Symbol is IFieldSymbol or IPropertySymbol;
 
     private static bool IsDisposeCall(MemberAccessExpressionSyntax memberAccess)
     {
@@ -590,6 +685,9 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 return argument.Parent is ArgumentListSyntax;
 
             case ReturnStatementSyntax:
+                return true;
+
+            case YieldStatementSyntax:
                 return true;
 
             case ArrowExpressionClauseSyntax arrow:

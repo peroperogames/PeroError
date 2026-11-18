@@ -9,3 +9,4 @@ PERR100 | PeroError.Usage | Warning | A Result is produced and never consumed
 PERR101 | PeroError.Usage | Warning | A local Result is never consumed
 PERR102 | PeroError.Usage | Warning | A Result is consumed more than once
 PERR103 | PeroError.Usage | Warning | A Result parameter is never consumed
+PERR104 | PeroError.Usage | Warning | A Result is overwritten before it is consumed

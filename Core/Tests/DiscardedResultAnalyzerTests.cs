@@ -284,6 +284,59 @@ if (result.isOK)
     }
 
     [Test]
+    public void ReportsOverwrittenConsumedLocalTest()
+    {
+        // The first Result is silently lost when the local is assigned over
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult = Helper.DoWork();\nHelper.Handle(result);"));
+
+        AssertIds(diagnostics, "PERR104");
+    }
+
+    [Test]
+    public void ReportsNeverAwaitedTaskVariableTest()
+    {
+        // The task is stored and dropped: neither awaited nor handed on, so the Result never surfaces
+        var diagnostics = Run(Source("var task = Helper.DoWorkAsync();"));
+
+        AssertIds(diagnostics, "PERR100");
+    }
+
+    [Test]
+    public void ReportsLocalHoldingImplicitlyConvertedErrorTest()
+    {
+        // Result<T> r = Err.New(...) holds a Result even though the initializer is an Err
+        var diagnostics = Run(Source("Result<MyErr> result = Err.New(MyErr.A, \"boom\");"));
+
+        AssertIds(diagnostics, "PERR101");
+    }
+
+    [Test]
+    public void ReportsResultStoredInFieldTest()
+    {
+        // Storing a Result in a member does not hand the error anywhere: it never returns to the pool
+        var diagnostics = Run(prelude + @"
+public sealed class Subject
+{
+    private Result<MyErr> m_Result = Helper.DoWork();
+}");
+
+        AssertIds(diagnostics, "PERR100");
+    }
+
+    [Test]
+    public void ReportsResultAssignedToFieldTest()
+    {
+        var diagnostics = Run(prelude + @"
+public sealed class Subject
+{
+    private Result<MyErr> m_Result;
+
+    public void Refresh() => m_Result = Helper.DoWork();
+}");
+
+        AssertIds(diagnostics, "PERR100");
+    }
+    [Test]
     public void ReportsConsumedTwiceWhenBranchDoesNotExitTest()
     {
         // Both places can run: the if branch falls through instead of leaving the method
@@ -586,6 +639,50 @@ public static class Subject
         AssertIds(diagnostics);
     }
 
+    [Test]
+    public void IgnoresYieldReturnedTest()
+    {
+        // `yield return` hands the value to whoever enumerates the iterator
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static System.Collections.Generic.IEnumerable<Result<MyErr>> LoadAll(string[] paths)
+    {
+        foreach (var path in paths)
+        {
+            yield return Helper.DoWork();
+        }
+    }
+}");
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresOutParameterTest()
+    {
+        // ref / out / in parameters stay owned by the caller (Try-pattern)
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static bool TryLoad(string path, out Result<MyErr> result)
+    {
+        result = Helper.DoWork();
+        return true;
+    }
+}");
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresResultHoldingAnErrorTest()
+    {
+        // The README way of returning an error to the pool through a Result
+        var diagnostics = Run(Source("var err = Err.New(MyErr.A, \"boom\");\nResult<MyErr> held = err;\nheld.Dispose();"));
+
+        AssertIds(diagnostics);
+    }
     [Test]
     public void IgnoresResultPropertyExpressionBodyTest()
     {

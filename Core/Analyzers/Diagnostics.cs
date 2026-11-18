@@ -57,4 +57,16 @@ internal static class Diagnostics
         isEnabledByDefault: true,
         description: "A Result may only be disposed, returned, passed on or wrapped once; consuming it twice "
                      + "hands the same error out twice.");
+
+    /// <summary>A Result is assigned over before it is consumed</summary>
+    public static readonly DiagnosticDescriptor overwrittenResult = new(
+        id: "PERR104",
+        title: "Result is overwritten before it is consumed",
+        messageFormat: "Variable '{0}' is assigned over here; the Result it held is dropped without being "
+                       + "disposed, returned, passed on or wrapped",
+        category: category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Assigning over a Result loses the value it held: its error never returns to the pool "
+                     + "and is never reported. Consume the previous value first.");
 }

@@ -280,12 +280,15 @@ Reading `isOK` / `err` / `value`, calling `Unwrap()` / `Match()` / `Switch()`, o
 
 Consuming in two places that can never both run is not double consumption either: the two branches of one `if` / `switch` / `?:`, or the code after a branch that ends with `return` / `throw`.
 
+Storing a Result in a field or property is not a consumption either — the error would sit in the member and never return to the pool. `yield return` does hand the Result over, and `ref` / `out` / `in` parameters stay owned by the caller, so they are not analyzed.
+
 | ID | Reported when |
 | --- | --- |
 | `PERR100` | a produced Result is never consumed — `Load();`, `await LoadAsync();`, `Load().Unwrap();` |
 | `PERR101` | a local Result is never consumed |
 | `PERR102` | a Result is consumed more than once — `r.Dispose(); r.Dispose();`, `using var r = …; Handle(r);` |
 | `PERR103` | a Result parameter is never consumed |
+| `PERR104` | a Result is assigned over before it is consumed — `r = Load();` when `r` already held one |
 
 Consuming twice is a real bug, not just a style issue: the error goes back to the pool while a wrapped error still references it as `causedBy`, so the chain can lose — or silently mix up — error info afterwards. A returned error is never pushed into the pool twice (the second `Dispose()` is a no-op), but the second owner is then looking at an instance that has already been handed out to somebody else.
 

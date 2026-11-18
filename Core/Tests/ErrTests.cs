@@ -223,11 +223,13 @@ public sealed class ErrTests
     public void TwoResultsSharingAnErrorReturnItOnceTest()
     {
         var err = Err.New(TestErrKind.LowLevel, "shared");
+#pragma warning disable PERR102 // two Results deliberately share one error to check the pool guard
         Result<TestErrKind> first = err;
-        Result<TestErrKind> second = first; // both Results hold the same error
+        Result<TestErrKind> second = first;
 
         first.Dispose();
         second.Dispose(); // must be a no-op
+#pragma warning restore PERR102
 
         var rentedFirst = Err.New(TestErrKind.LowLevel, "first");
         var rentedSecond = Err.New(TestErrKind.LowLevel, "second");

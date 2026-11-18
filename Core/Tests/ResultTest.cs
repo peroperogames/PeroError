@@ -8,7 +8,8 @@
 using System;
 using NUnit.Framework;
 
-// These tests verify the deprecated direct accessors, so using them here is intended
+// These tests verify the deprecated direct accessors and cache Results in fields on purpose
+#pragma warning disable PERR100 // Results are stored in fields on purpose here
 #pragma warning disable CS0618 // Type or member is obsolete
 
 namespace PeroTools2.Error.Tests;
