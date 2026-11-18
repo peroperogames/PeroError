@@ -292,7 +292,7 @@ return content; // success: the value is out and there is no error left to relea
 
 The failure branch returns, so the two consumption points cannot both run on one path — that is exactly what the analyzer checks for.
 
-The analyzer ships inside the NuGet package (`analyzers/dotnet/cs`) and is picked up automatically. For Unity both Roslyn components live in `Unity/Plugins/` and carry the `RoslynAnalyzer` label. Turn a rule off with `dotnet_diagnostic.PERR102.severity = none` in `.editorconfig`, or with a `Default.ruleset` in Unity.
+> Turn a rule off with `dotnet_diagnostic.PERR102.severity = none` in `.editorconfig`, or with a `Default.ruleset` in Unity.
 
 ### Error companion classes
 
