@@ -7,6 +7,7 @@
 
 #pragma warning disable CS0618 // Type or member is obsolete
 using System;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 
 namespace PeroTools2.Error;
@@ -40,6 +41,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
 
     /// <summary>Tries to get the error; returns true only when the Result failed</summary>
     /// <param name="value">Receives the error when the Result failed</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? value)
     {
         value = err;
@@ -48,6 +50,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
 
     /// <summary>Tries to get the success marker; returns true only when the Result succeeded</summary>
     /// <param name="value">Receives the success marker when the Result succeeded</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public bool TryGetValue([NotNullWhen(true)] out Succeed? value)
     {
         value = isOK ? Succeed.instance : null;
@@ -205,6 +208,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
 
     /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
     /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public bool TryGetValue(out T? result)
     {
         result = m_Value;
@@ -213,6 +217,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
 
     /// <summary>Tries to get the error; returns true only when the Result failed</summary>
     /// <param name="error">Receives the error when the Result failed</param>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? error)
     {
         error = err;
