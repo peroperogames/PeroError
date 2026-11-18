@@ -251,14 +251,6 @@ Debug.LogError(err.ToString());
 
 `CausedByException(out var ex)` returns the first exception found in the chain, and `Panic()` wraps that same text into a `ManualPanicException` when the error has to become an exception: `throw err.Panic();`.
 
-### Nullable annotations
-
-`Core` is compiled with `<Nullable>enable</Nullable>`, so consumers on .NET 8+ — and Unity on API level `.NET Standard 2.1` — get full flow analysis:
-
-- the `TryGetValue` overloads carry `[NotNullWhen]`, so the `out` value is not null inside the branch where the call returned `true`;
-- `ValueOrDefault` takes `[AllowNull]` and returns `[MaybeNull]`, because `default` may be null for a reference type;
-- direct `err` / `value` access is kept for compatibility and marked `[Obsolete]`; prefer `TryGetValue` in new code.
-
 ### Result ownership
 
 A `Result` owns an `Err` instance, and `Dispose()` hands it back to the internal pool. The analyzer therefore requires every `Result` to be consumed **exactly once**.
