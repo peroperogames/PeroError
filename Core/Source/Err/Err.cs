@@ -42,8 +42,8 @@ public static class Err
         [CallerLineNumber]
         int callerLineNumber = 0
     ) where TKind : struct, Enum =>
-        Err<TKind>.Rent(kind, message, null!, null!,
-            new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber));
+        Err<TKind>.Rent(kind, message, null, null,
+            new CallerInfo(callerMemberName, callerFilePath, callerLineNumber));
 
     /// <summary>
     /// Wraps an underlying error into a new error.
@@ -65,8 +65,8 @@ public static class Err
         int callerLineNumber = 0
     ) where TKind : struct, Enum =>
         Err<TKind>.Rent(
-            kind, message, causedBy, null!,
-            new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber)
+            kind, message, causedBy, null,
+            new CallerInfo(callerMemberName, callerFilePath, callerLineNumber)
         );
 
     /// <summary>
@@ -93,7 +93,7 @@ public static class Err
         int callerLineNumber = 0
     ) where TKind : struct, Enum
     {
-        causedBy.AddStackTrace(new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber));
+        causedBy.AddStackTrace(new CallerInfo(callerMemberName, callerFilePath, callerLineNumber));
         return causedBy;
     }
 
@@ -120,8 +120,8 @@ public static class Err
         int callerLineNumber = 0
     ) where TKind : struct, Enum =>
         Err<TKind>.Rent(
-            kind, message, null!, ex,
-            new CallerInfo(callerMemberName!, callerFilePath!, callerLineNumber)
+            kind, message, null, ex,
+            new CallerInfo(callerMemberName, callerFilePath, callerLineNumber)
         );
 }
 
@@ -160,7 +160,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
 
     private static readonly ConcurrentStack<Err<TKind>> s_Pool = new();
 
-    internal static Err<TKind> Rent(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
+    internal static Err<TKind> Rent(TKind kind, string message, ErrBase? causedBy, Exception? exception, CallerInfo callerInfo)
     {
         if (s_Pool.TryPop(out var err))
         {
@@ -173,7 +173,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
         return err;
     }
 
-    internal static Err<TKind> Rent(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
+    internal static Err<TKind> Rent(TKind kind, string message, ErrBase? causedBy, Exception? exception, List<CallerInfo> frames)
     {
         if (s_Pool.TryPop(out var err))
         {
@@ -233,7 +233,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     /// Should not be used directly.<br/>
     /// When creating a new error, use <see cref="Err.New{TKind}"/> instead
     /// </summary>
-    protected internal Err(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
+    protected internal Err(TKind kind, string message, ErrBase? causedBy, Exception? exception, CallerInfo callerInfo)
     {
         this.kind = kind;
         m_Message = message;
@@ -243,7 +243,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
         m_RentVersion = 1;
     }
 
-    private Err(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
+    private Err(TKind kind, string message, ErrBase? causedBy, Exception? exception, List<CallerInfo> frames)
     {
         this.kind = kind;
         m_Message = message;
@@ -270,7 +270,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     /// <param name="newMessage">New message (using current message if null or empty).</param>
     /// <typeparam name="TTo">New error kind type.</typeparam>
     /// <returns>A new <see cref="Err{TTo}"/> with new kind and message, which keeps stored Error info (causedBy/exception/stackTrace).</returns>
-    public Err<TTo> CastTo<TTo>(TTo targetKind, string newMessage = "") where TTo : struct, Enum => Err<TTo>.Rent(targetKind, string.IsNullOrEmpty(newMessage) ? message : newMessage, causedBy!, exception!, stackTrace);
+    public Err<TTo> CastTo<TTo>(TTo targetKind, string newMessage = "") where TTo : struct, Enum => Err<TTo>.Rent(targetKind, string.IsNullOrEmpty(newMessage) ? message : newMessage, causedBy, exception, stackTrace);
 
     /// <inheritdoc cref="ErrBase.Panic"/>
     public override Exception Panic() => new ManualPanicException(ToString()); // Direct throw loses the stack trace
@@ -373,7 +373,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     /// <param name="exception">Underlying exception, when there is one</param>
     /// <param name="callerInfo">Caller info of the frame that creates the error</param>
     /// <remarks>Only called by the pooling machinery and by generated companion classes</remarks>
-    protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
+    protected internal void Init(TKind kind, string message, ErrBase? causedBy, Exception? exception, CallerInfo callerInfo)
     {
         m_Pooled = 0;
         m_RentVersion++;
@@ -394,7 +394,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     /// Only called by the pooling machinery. The frames are copied, so the list still belongs to the
     /// caller afterwards and the two errors never share one mutable list.
     /// </remarks>
-    protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
+    protected internal void Init(TKind kind, string message, ErrBase? causedBy, Exception? exception, List<CallerInfo> frames)
     {
         m_Pooled = 0;
         m_RentVersion++;
