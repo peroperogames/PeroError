@@ -10,6 +10,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 
 namespace PeroTools2.Error;
 
@@ -126,7 +127,7 @@ public static class Err
 
 /// <summary>Error object that carries an error enum</summary>
 /// <typeparam name="TKind">Error enum type</typeparam>
-public class Err<TKind> : ErrBase where TKind : struct, Enum
+public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
 {
     /// <summary>Error enum value of the current error</summary>
     public virtual TKind kind { get; private set; }
@@ -143,6 +144,10 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     private ErrBase? m_CausedBy;
     private string m_Message;
     private Exception? m_Exception;
+
+    // 0 while the instance is owned by somebody, 1 once it has been handed back to the pool.
+    // Guards against returning the same instance twice, which would hand it out to two owners.
+    private int m_Pooled;
 
     private Lazy<List<string>> notes { get; } = new(static () => new List<string>(5));
 
@@ -161,21 +166,28 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
         return err;
     }
 
-    internal static Err<TKind> Rent(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> stackTrace)
+    internal static Err<TKind> Rent(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
     {
         if (s_Pool.TryPop(out var err))
         {
-            err.Init(kind, message, causedBy, exception, stackTrace);
+            err.Init(kind, message, causedBy, exception, frames);
         }
         else
         {
-            err = new Err<TKind>(kind, message, causedBy, exception, stackTrace);
+            err = new Err<TKind>(kind, message, causedBy, exception, frames);
         }
         return err;
     }
 
     internal static void Return(Err<TKind> err)
     {
+        // A second return would push the very same instance into the pool again, so two unrelated
+        // callers could rent it; the flag makes the duplicate return a no-op instead
+        if (Interlocked.Exchange(ref err.m_Pooled, 1) != 0)
+        {
+            return;
+        }
+
         err.Reset();
         err.OnReturn();
     }
@@ -185,6 +197,13 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     /// its own pool, so instances of different companion classes never get mixed up.
     /// </summary>
     protected virtual void OnReturn() => s_Pool.Push(this);
+
+    /// <summary>Hands the error back to the pool it came from</summary>
+    /// <remarks>
+    /// Disposing it a second time does nothing. The instance may be handed out again right after it
+    /// has been returned, so it must not be touched any more.
+    /// </remarks>
+    public void Dispose() => Return(this);
 
     /// <summary>Simulates a stack trace with CallerInfo</summary>
     protected readonly List<CallerInfo> stackTrace;
@@ -202,13 +221,14 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
         stackTrace = [callerInfo];
     }
 
-    private Err(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> stackTrace)
+    private Err(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
     {
         this.kind = kind;
         m_Message = message;
         m_CausedBy = causedBy;
         m_Exception = exception;
-        this.stackTrace = stackTrace;
+        // Copy: the caller keeps owning the list it passed in, e.g. the stack trace of another error
+        stackTrace = new List<CallerInfo>(frames);
     }
 
     /// <summary>Appends one frame of stack trace info</summary>
@@ -235,7 +255,7 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     /// <inheritdoc cref="ErrBase.CausedByException"/>
     public override bool CausedByException(out Exception? ex)
     {
-        ErrBase current = this;
+        ErrBase? current = this;
         while (current != null)
         {
             if (current.exception != null)
@@ -306,6 +326,10 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     /// <summary>
     /// This error has been fully resolved.
     /// </summary>
+    /// <remarks>
+    /// Only this instance is cleared. Errors it wraps are owned by whoever kept a reference to them,
+    /// so they are left untouched here; they are collected by the GC once nothing refers to them.
+    /// </remarks>
     protected internal override void Reset()
     {
         if (notes.IsValueCreated)
@@ -316,12 +340,6 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
         m_Exception = null;
         m_Message = string.Empty;
         stackTrace.Clear();
-        var warped = causedBy;
-        while (warped != null)
-        {
-            warped.Reset();
-            warped = warped.causedBy;
-        }
     }
 
     // ReSharper disable ParameterHidesMember
@@ -334,6 +352,7 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     /// <remarks>Only called by the pooling machinery and by generated companion classes</remarks>
     protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
     {
+        m_Pooled = 0;
         this.kind = kind;
         m_Message = message;
         m_CausedBy = causedBy;
@@ -346,14 +365,19 @@ public class Err<TKind> : ErrBase where TKind : struct, Enum
     /// <param name="message">Error message</param>
     /// <param name="causedBy">Underlying error, when there is one</param>
     /// <param name="exception">Underlying exception, when there is one</param>
-    /// <param name="stackTrace">Stack trace to adopt</param>
-    /// <remarks>Only called by the pooling machinery</remarks>
-    protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> stackTrace)
+    /// <param name="frames">Stack trace to copy</param>
+    /// <remarks>
+    /// Only called by the pooling machinery. The frames are copied, so the list still belongs to the
+    /// caller afterwards and the two errors never share one mutable list.
+    /// </remarks>
+    protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
     {
+        m_Pooled = 0;
         this.kind = kind;
         m_Message = message;
         m_CausedBy = causedBy;
         m_Exception = exception;
-        stackTrace.AddRange(stackTrace);
+        stackTrace.Clear();
+        stackTrace.AddRange(frames);
     }
 }

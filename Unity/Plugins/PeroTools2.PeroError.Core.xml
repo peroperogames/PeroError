@@ -116,6 +116,13 @@
             its own pool, so instances of different companion classes never get mixed up.
             </summary>
         </member>
+        <member name="M:PeroTools2.Error.Err`1.Dispose">
+            <summary>Hands the error back to the pool it came from</summary>
+            <remarks>
+            Disposing it a second time does nothing. The instance may be handed out again right after it
+            has been returned, so it must not be touched any more.
+            </remarks>
+        </member>
         <member name="F:PeroTools2.Error.Err`1.stackTrace">
             <summary>Simulates a stack trace with CallerInfo</summary>
         </member>
@@ -162,6 +169,10 @@
             <summary>
             This error has been fully resolved.
             </summary>
+            <remarks>
+            Only this instance is cleared. Errors it wraps are owned by whoever kept a reference to them,
+            so they are left untouched here; they are collected by the GC once nothing refers to them.
+            </remarks>
         </member>
         <member name="M:PeroTools2.Error.Err`1.Init(`0,System.String,PeroTools2.Error.ErrBase,System.Exception,PeroTools2.Error.CallerInfo)">
             <summary>Re-initializes a pooled instance before it is handed out again</summary>
@@ -178,8 +189,11 @@
             <param name="message">Error message</param>
             <param name="causedBy">Underlying error, when there is one</param>
             <param name="exception">Underlying exception, when there is one</param>
-            <param name="stackTrace">Stack trace to adopt</param>
-            <remarks>Only called by the pooling machinery</remarks>
+            <param name="frames">Stack trace to copy</param>
+            <remarks>
+            Only called by the pooling machinery. The frames are copied, so the list still belongs to the
+            caller afterwards and the two errors never share one mutable list.
+            </remarks>
         </member>
         <member name="T:PeroTools2.Error.ErrArgAttribute">
             <summary>
@@ -359,6 +373,7 @@
         </member>
         <member name="M:PeroTools2.Error.Result`1.op_Implicit(PeroTools2.Error.Err{`0})~PeroTools2.Error.Result{`0}">
             <summary>Treats an error directly as a failed Result</summary>
+            <remarks>The Result takes ownership of the error: disposing it returns the error to the pool</remarks>
         </member>
         <member name="M:PeroTools2.Error.Result`1.Unwrap">
             <summary>
@@ -455,6 +470,7 @@
         </member>
         <member name="M:PeroTools2.Error.Result`2.op_Implicit(PeroTools2.Error.Err{`1})~PeroTools2.Error.Result{`0,`1}">
             <summary>Treats an error directly as a failed Result</summary>
+            <remarks>The Result takes ownership of the error: disposing it returns the error to the pool</remarks>
         </member>
         <member name="M:PeroTools2.Error.Result`2.ToString">
             <summary>Formats the state of the Result for output</summary>
@@ -476,6 +492,7 @@
             <summary>
             Returns the value when the Result succeeded, otherwise returns the default value
             </summary>
+            <param name="default">Value used when the Result failed</param>
         </member>
         <member name="M:PeroTools2.Error.Result`2.ValueOr(System.Func{PeroTools2.Error.Err{`1},`0})">
             <summary>
@@ -503,11 +520,19 @@
             <summary>
             Casts Result&lt;T, TErrKind> to Result&lt;TR, TErrKind&gt;
             </summary>
+            <remarks>
+            On failure the returned Result takes over the error of this one, so this Result must not be
+            consumed afterwards — the same error would be handed back to the pool twice.
+            </remarks>
         </member>
         <member name="M:PeroTools2.Error.Result`2.Map``1(System.Func{`0,``0})">
             <summary>
             Converts Result&lt;T, TErrKind> to Result&lt;TR, TErrKind&gt;
             </summary>
+            <remarks>
+            On failure the returned Result takes over the error of this one, so this Result must not be
+            consumed afterwards — the same error would be handed back to the pool twice.
+            </remarks>
         </member>
         <member name="T:PeroTools2.Error.Result`2.IUnionMembers">
             <summary>Members that the compiler-generated union pattern matching relies on</summary>

@@ -8,6 +8,9 @@
 using System;
 using NUnit.Framework;
 
+// These tests verify the deprecated direct accessors, so using them here is intended
+#pragma warning disable CS0618 // Type or member is obsolete
+
 namespace PeroTools2.Error.Tests;
 
 [TestFixture]

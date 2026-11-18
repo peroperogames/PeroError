@@ -79,6 +79,8 @@ Or install via CLI:
 openupm add com.prpr.error
 ```
 
+The bundled runtime assembly is a **.NET Standard 2.1** build, so the player settings need `Api Compatibility Level` set to `.NET Standard 2.1` (Unity 2021.2+) or above. The analyzer and generator assemblies stay **.NET Standard 2.0**, which is what Unity's compiler host loads them as.
+
 ## Features
 
 ### Quick start
@@ -92,19 +94,23 @@ public enum IOErr
     EOF,              // maps to EndOfStreamException
     Others,           // maps to any other IOException, e.g. PipeException, FileLoadException
 }
+public enum ConfigErr
+{
+    NotFound,
+}
 
 // a function that produces either a value or an error
-private static Result<string, IOErr> ReadFromFile(string filePath)
+static Result<string, IOErr> ReadFromFile(string filePath)
 {
     // Usage 1: create the error directly
-    if(!File.Exists(filePath))
+    if (!File.Exists(filePath))
     {
-       // creates an Err<IOErr>, implicitly converted to Result<string, IOErr>.Fail()
+        // creates an Err<IOErr>, implicitly converted to Result<string, IOErr>.Fail()
         return Err.New(IOErr.NotFound, message: $"File {filePath} NotFound")
             .AddNote("Note1")
             .AddNote("Note2"); // any error can carry extra descriptive notes
     }
-    
+
     // Usage 2: create the error from an exception
     try
     {
@@ -123,29 +129,29 @@ private static Result<string, IOErr> ReadFromFile(string filePath)
 }
 
 // a function that handles errors
-public Result<Config, ConfigErr> ReadConfig(string configPath)
+static Result<string, ConfigErr> ReadConfig(string configPath)
 {
     var readResult = ReadFromFile(configPath);
     string configContent;
-    if(readResult.isOK)
+    if (readResult.TryGetValue(out var value, out var err))
     {
-        configContent = readResult.value;
+        configContent = value;
         readResult.Dispose(); // released: we are done with it
     }
     else
     {
-        switch(readResult.err!.kind)
+        switch (err.kind)
         {
             // Option 1: hand the error over to a new error (this consumes the Result)
             case IOErr.NotFound:
             {
                 // wrap IOErr as ConfigErr
-                return readResult.err.Wrap(ConfigErr.NotFound, message: "WhatEver");
+                return err.Wrap(ConfigErr.NotFound, message: "WhatEver");
             }
             // Option 2: handle the error in place, then release the Result
             case IOErr.Others:
             {
-                log.Error(readResult.err);
+                Console.Error.WriteLine(err);
                 configContent = "Default Value"; // provide a default value
                 readResult.Dispose();
                 break;
@@ -153,13 +159,15 @@ public Result<Config, ConfigErr> ReadConfig(string configPath)
             // Option 3: give up and turn it into an unrecoverable exception
             default:
             {
-                var panic = readResult.err.Panic(); // snapshot the full error text first
+                var panic = err.Panic(); // snapshot the full error text first
                 readResult.Dispose();
                 throw panic;
             }
         }
     }
-    ... // the rest of the work
+    // ...
+    // the rest of the work
+    return configContent;
 }
 ```
 
@@ -207,6 +215,54 @@ static string DealWithIOError(Result<string, IOErr> result)
 }
 ```
 
+### Propagating an error
+
+`Wrap` re-classifies a failure: it creates a **new** error kind and keeps the current error as its `causedBy`. When nothing needs re-classifying and the method only passes the failure up, use `AddCallerFrame()` instead — it appends one stack frame to the **same** error and returns that very instance, so kind, message, notes and exception stay untouched while the trace still records every hop:
+
+```csharp
+public Result<string, IOErr> LoadConfig(string path)
+{
+    var readResult = ReadFromFile(path);
+    if (!readResult.isOK)
+    {
+        return readResult.err!.AddCallerFrame(); // one more frame; ownership moves to the caller
+    }
+
+    readResult.Dispose();
+    return readResult.value;
+}
+```
+
+### Printing an error
+
+`ToString()` walks the whole chain already: the error kind, the simulated stack trace (outermost frame first), the message, the notes, the wrapped exception, and every `causedBy` recursively. Logging it puts the entire chain into one entry:
+
+```csharp
+var root = Err.New(IOErr.NotFound, "File /tmp/a.txt Do Not Exist").AddNote("retried with the default path");
+var err = root.Wrap(ConfigErr.NotFound, "config not found");
+
+Debug.LogError(err.ToString());
+// Game.ConfigErr.NotFound
+//   At: LoadConfig @ Assets/Config.cs:42
+//   Message: config not found
+// ========== CausedBy ==========
+// Game.IOErr.NotFound
+//   At: ReadFromFile @ Assets/Config.cs:21
+//   Message: File /tmp/a.txt Do Not Exist
+//   Notes:
+//     0: retried with the default path
+```
+
+`CausedByException(out var ex)` returns the first exception found in the chain, and `Panic()` wraps that same text into a `ManualPanicException` when the error has to become an exception: `throw err.Panic();`.
+
+### Nullable annotations
+
+`Core` is compiled with `<Nullable>enable</Nullable>`, so consumers on .NET 8+ — and Unity on API level `.NET Standard 2.1` — get full flow analysis:
+
+- the `TryGetValue` overloads carry `[NotNullWhen]`, so the `out` value is not null inside the branch where the call returned `true`;
+- `ValueOrDefault` takes `[AllowNull]` and returns `[MaybeNull]`, because `default` may be null for a reference type;
+- direct `err` / `value` access is kept for compatibility and marked `[Obsolete]`; prefer `TryGetValue` in new code.
+
 ### Result ownership
 
 A `Result` owns an `Err` instance, and `Dispose()` hands it back to the internal pool. The analyzer therefore requires every `Result` to be consumed **exactly once**.
@@ -218,9 +274,11 @@ A `Result` counts as consumed when, and only when:
 | 1 | it is disposed | `using var r = Load();` · `using (r) { }` · `r.Dispose();` |
 | 2 | it is returned | `return r;` · `Result<string, IOErr> M() => Load();` |
 | 3 | it is passed as an argument | `Handle(Load());` |
-| 4 | its error is wrapped into a new error | `return r.err.Wrap(IOErr.NotFound, "not found");` |
+| 4 | its error is handed over — wrapped into a new error, propagated with one more frame, or returned / passed on directly | `return r.err.Wrap(IOErr.NotFound, "not found");` · `return r.err!.AddCallerFrame();` |
 
 Reading `isOK` / `err` / `value`, calling `Unwrap()` / `Match()` / `Switch()`, or simply dropping the value does **not** consume it — the current method still owns it.
+
+Consuming in two places that can never both run is not double consumption either: the two branches of one `if` / `switch` / `?:`, or the code after a branch that ends with `return` / `throw`.
 
 | ID | Reported when |
 | --- | --- |
@@ -229,7 +287,7 @@ Reading `isOK` / `err` / `value`, calling `Unwrap()` / `Match()` / `Switch()`, o
 | `PERR102` | a Result is consumed more than once — `r.Dispose(); r.Dispose();`, `using var r = …; Handle(r);` |
 | `PERR103` | a Result parameter is never consumed |
 
-Consuming twice is a real bug, not just a style issue: `Dispose()` returns the error to the pool while a wrapped error still references it as `causedBy`, so the chain can lose — or silently mix up errors afterwards.
+Consuming twice is a real bug, not just a style issue: the error goes back to the pool while a wrapped error still references it as `causedBy`, so the chain can lose — or silently mix up — error info afterwards. A returned error is never pushed into the pool twice (the second `Dispose()` is a no-op), but the second owner is then looking at an instance that has already been handed out to somebody else.
 
 ```csharp
 var readResult = ReadFromFile(path);
@@ -241,6 +299,8 @@ if (!readResult.isOK)
 string content = readResult.value;
 readResult.Dispose();                                                   // success path: release it
 ```
+
+The failure branch returns, so the two consumption points cannot both run on one path — that is exactly what the analyzer checks for.
 
 The analyzer ships inside the NuGet package (`analyzers/dotnet/cs`) and is picked up automatically. For Unity both Roslyn components live in `Unity/Plugins/` and carry the `RoslynAnalyzer` label. Turn a rule off with `dotnet_diagnostic.PERR102.severity = none` in `.editorconfig`, or with a `Default.ruleset` in Unity.
 
@@ -257,9 +317,7 @@ public enum IOErr
 }
 ```
 
-That is equivalent to hand-writing the following (the generator emits exactly this). The constructor
-stays **private**: instances always come from the pooled `New` factory, so a companion class costs no
-allocation once one instance is back in the pool:
+That is equivalent to hand-writing the following (the generator emits exactly this). The constructor stays **private**: instances always come from the pooled `New` factory, so a companion class costs no allocation once one instance is back in the pool:
 
 ```csharp
 public sealed class IOErr_NotFound : Err<IOErr>
@@ -304,8 +362,18 @@ public sealed class IOErr_NotFound : Err<IOErr>
         return new IOErr_NotFound(path, message, causedBy, ex, callerInfo);
     }
 
-    // `Dispose()` on a Result that holds this error puts it back into this class's own pool
-    protected override void OnReturn() => s_Pool.Push(this);
+    // `Dispose()` on the error — or on a Result that holds it — puts it back into this class's pool.
+    // The argument values are dropped first, so the pool never keeps user data alive.
+    protected override void OnReturn()
+    {
+        ClearArgs();
+        s_Pool.Push(this);
+    }
+
+    private void ClearArgs()
+    {
+        this.path = default;
+    }
 }
 
 // usage
@@ -315,9 +383,14 @@ err.path;    // "/tmp/a.txt"
 
 Result<string, IOErr> held = err; // the Result takes ownership again
 held.Dispose();                   // ... and releases the error back to the pool
+
+// an error knows how to hand itself back as well
+using var other = IOErr_NotFound.New("/tmp/b.txt");
 ```
 
-The generated companion class *is* an `Err<TKind>`, so `Wrap` / `AddNote` / `Result` / `CastTo<T>` all keep working, and callers do not have to pass `CallerInfo` by hand while the stack trace stays accurate.
+Every `Err<TKind>` is `IDisposable`, and returning an instance twice is safe: the second `Dispose()` is a no-op, so a struct copy of a `Result` can never push the same error into the pool twice.
+
+The generated companion class *is* an `Err<TKind>`, so `Dispose` / `Wrap` / `AddNote` / `Result` / `CastTo<T>` all keep working, and callers do not have to pass `CallerInfo` by hand while the stack trace stays accurate.
 
 ## License
 

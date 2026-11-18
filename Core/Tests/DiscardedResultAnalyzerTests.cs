@@ -284,6 +284,42 @@ if (result.isOK)
     }
 
     [Test]
+    public void ReportsConsumedTwiceWhenBranchDoesNotExitTest()
+    {
+        // Both places can run: the if branch falls through instead of leaving the method
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWork();
+if (!result.isOK)
+{
+    Helper.Handle(result);
+}
+
+result.Dispose();"));
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
+    public void ReportsConsumedTwiceInLoopTest()
+    {
+        // `continue` only leaves the current iteration, so the next one consumes the Result again
+        var diagnostics = Run(Source(@"
+foreach (var item in new[] { 1, 2 })
+{
+    var result = Helper.DoWork();
+    if (item == 1)
+    {
+        result.Dispose();
+        continue;
+    }
+
+    Helper.Handle(result);
+}"));
+
+        AssertIds(diagnostics, "PERR102");
+    }
+
+    [Test]
     public void IgnoresConsumedInSeparateBranchesTest()
     {
         // Only one branch runs, so the Result is consumed exactly once on every path
@@ -320,6 +356,79 @@ else
         AssertIds(diagnostics);
     }
 
+    [Test]
+    public void IgnoresDisposedAfterEarlyReturnTest()
+    {
+        // The shape the README recommends: the failure branch hands the error over and returns,
+        // so the code after the if only runs on the success path
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static Result<MyErr> Test()
+    {
+        var result = Helper.DoWork();
+        if (!result.isOK)
+        {
+            return result.err!.Wrap(MyErr.B, ""config not found"");
+        }
+
+        result.Dispose();
+        return Result<MyErr>.OK();
+    }
+}");
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresDisposedAfterEarlyThrowTest()
+    {
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWork();
+if (!result.isOK)
+{
+    throw result.err!.Panic();
+}
+
+result.Dispose();"));
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresMemberWithoutBodyTest()
+    {
+        // Interface members and abstract methods have no implementation that could consume anything
+        var diagnostics = Run(prelude + @"
+public interface ISubject
+{
+    void Handle(Result<MyErr> value);
+
+    Result<int, MyErr> Load(Result<MyErr> value);
+}
+
+public abstract class SubjectBase
+{
+    public abstract void Handle(Result<int, MyErr> value);
+}");
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresPartialMethodDeclarationTest()
+    {
+        // A partial method's declaration half has no body; only the implementation is analyzed
+        var diagnostics = Run(prelude + @"
+public partial class Subject
+{
+    partial void Handle(Result<MyErr> value);
+
+    partial void Handle(Result<MyErr> value) => value.Dispose();
+}");
+
+        AssertIds(diagnostics);
+    }
     [Test]
     public void IgnoresConsumedParameterTest()
     {
@@ -433,6 +542,46 @@ public static class Subject
     {
         // Rule 4: wrapping the error hands it over to the new error
         var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.err.Wrap(MyErr.A, \"wrapped\");"));
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresReturnedErrorTest()
+    {
+        // Returning the error hands it over just like returning the Result itself
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static Err<MyErr> Test()
+    {
+        var result = Helper.DoWork();
+        return result.err!;
+    }
+}");
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresAddCallerFrameTest()
+    {
+        // The README pattern for pure propagation: same error, one more stack frame
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static Result<MyErr> Test()
+    {
+        var result = Helper.DoWork();
+        if (!result.isOK)
+        {
+            return result.err!.AddCallerFrame();
+        }
+
+        result.Dispose();
+        return Result<MyErr>.OK();
+    }
+}");
 
         AssertIds(diagnostics);
     }

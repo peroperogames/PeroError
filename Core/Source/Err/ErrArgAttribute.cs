@@ -41,7 +41,7 @@ public sealed class ErrArgAttribute : Attribute
     public Type type { get; }
 
     /// <summary>Parameter description, written to the property and constructor parameter docs</summary>
-    public string comment { get; }
+    public string? comment { get; }
 
     /// <summary>Declares one piece of data that the companion class carries</summary>
     /// <param name="name">Parameter name; also the companion property name and the placeholder name</param>
@@ -52,7 +52,7 @@ public sealed class ErrArgAttribute : Attribute
     /// <param name="name">Parameter name; also the companion property name and the placeholder name</param>
     /// <param name="type">Parameter type</param>
     /// <param name="comment">Parameter description, written to the property and parameter docs</param>
-    public ErrArgAttribute(string name, Type type, string comment)
+    public ErrArgAttribute(string name, Type type, string? comment)
     {
         this.name = name;
         this.type = type;

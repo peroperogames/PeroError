@@ -32,7 +32,7 @@ public abstract class ErrBase
 
     /// <summary>Checks whether the error chain contains an exception.</summary>
     /// <param name="ex">Receives the exception when there is one</param>
-    public abstract bool CausedByException(out Exception ex);
+    public abstract bool CausedByException(out Exception? ex);
 
     /// <summary>Formats this instance and writes it into the StringBuilder</summary>
     protected internal abstract void WriteToStringBuilder(StringBuilder sb);

@@ -160,6 +160,95 @@ public sealed class ErrTests
         Assert.That(lowLevel.causedBy, Is.Null);
     }
 
+    [Test]
+    public void CastToKeepsStoredErrorInfoTest()
+    {
+        var exception = CreateExceptionWithStackTrace("CastToTest");
+        var root = exception.Wrap(TestErrKind.LowLevel, "root cause");
+        var source = root.Wrap(TestErrKind.MidLevel, "mid level").AddCallerFrame(); // two stack frames
+
+        var casted = source.CastTo(TestErrKind.HighLevel, "high level");
+
+        Assert.That(casted.kind, Is.EqualTo(TestErrKind.HighLevel));
+        Assert.That(casted.message, Is.EqualTo("high level"));
+        Assert.That(casted.causedBy, Is.SameAs(root));
+        Assert.That(casted.CausedByException(out var found), Is.True);
+        Assert.That(found, Is.SameAs(exception));
+        Assert.That(casted.ToString(), Does.Contain("high level"));
+    }
+
+    [Test]
+    public void CastToCopiesStackTraceTest()
+    {
+        // The two errors must not share one mutable frame list: clearing one would clear the other
+        var source = Err.New(TestErrKind.MidLevel, "mid level").AddCallerFrame();
+        var casted = source.CastTo(TestErrKind.HighLevel, "high level");
+
+        var sourceFrames = (List<CallerInfo>)m_StackTrace.GetValue(source);
+        var castedFrames = (List<CallerInfo>)m_StackTrace.GetValue(casted);
+
+        Assert.That(castedFrames, Is.Not.SameAs(sourceFrames));
+        Assert.That(castedFrames, Has.Count.EqualTo(sourceFrames.Count));
+        Assert.That(castedFrames, Is.EqualTo(sourceFrames));
+    }
+
+    [Test]
+    public void ErrorIsDisposableTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "disposable");
+        Assert.That(err, Is.InstanceOf<IDisposable>());
+
+        err.Dispose();
+
+        // Disposing hands the instance back to the pool, which clears it
+        Assert.That(err.message, Is.Empty);
+        Assert.That(err.causedBy, Is.Null);
+    }
+
+    [Test]
+    public void DisposeTwiceReturnsToPoolOnceTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "disposable");
+        err.Dispose();
+        err.Dispose(); // must not push the same instance into the pool a second time
+
+        var first = Err.New(TestErrKind.LowLevel, "first");
+        var second = Err.New(TestErrKind.LowLevel, "second");
+
+        // A second push would hand the very same instance out twice
+        Assert.That(second, Is.Not.SameAs(first));
+    }
+
+    [Test]
+    public void TwoResultsSharingAnErrorReturnItOnceTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "shared");
+        Result<TestErrKind> first = err;
+        Result<TestErrKind> second = first; // both Results hold the same error
+
+        first.Dispose();
+        second.Dispose(); // must be a no-op
+
+        var rentedFirst = Err.New(TestErrKind.LowLevel, "first");
+        var rentedSecond = Err.New(TestErrKind.LowLevel, "second");
+
+        Assert.That(rentedSecond, Is.Not.SameAs(rentedFirst));
+    }
+
+    [Test]
+    public void ReturnedErrorKeepsCausedByChainTest()
+    {
+        var root = Err.New(TestErrKind.LowLevel, "root");
+        var wrapper = root.Wrap(TestErrKind.HighLevel, "high");
+
+        wrapper.Dispose();
+
+        // Only the returned instance is cleared; the errors it points at belong to someone else
+        Assert.That(wrapper.causedBy, Is.Null);
+        Assert.That(root.message, Is.EqualTo("root"));
+        Assert.That(root.kind, Is.EqualTo(TestErrKind.LowLevel));
+    }
+
     #region Utils
 
     // Only an exception thrown inside try/catch has a stack trace

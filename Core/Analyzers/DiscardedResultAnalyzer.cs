@@ -27,13 +27,19 @@ namespace PeroTools2.Error.Analyzers;
 /// or an explicit <c>r.Dispose()</c>;</item>
 /// <item>it is returned from the method (<c>return r;</c>, expression-bodied members and lambdas);</item>
 /// <item>it is passed as an argument to another method;</item>
-/// <item>its error is wrapped into a new error with <c>Err.Wrap</c> (<c>r.err.Wrap(...)</c>).</item>
+/// <item>its error is handed over: wrapped into a new error with <c>Err.Wrap</c>, propagated with
+/// <c>AddCallerFrame</c>, or returned / passed on as an argument.</item>
 /// </list>
 /// <para>
 /// Every other use — reading <c>isOK</c> / <c>err</c> / <c>value</c>, calling <c>Unwrap()</c> /
 /// <c>Match()</c> / <c>Switch()</c>, discarding it as a statement — does not consume the Result.
 /// A Result that is consumed twice would hand its error back to the pool twice, so double
 /// consumption is reported as well.
+/// </para>
+/// <para>
+/// Consuming it in two places that can never both run is not double consumption: the two branches
+/// of one <c>if</c> / <c>switch</c> / <c>?:</c>, and the code after a branch that ends with
+/// <c>return</c> or <c>throw</c>.
 /// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -132,6 +138,13 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     /// <summary>A Result that enters the method as a parameter is owned by the method as well</summary>
     private static void AnalyzeParameterConsumption(SyntaxNodeAnalysisContext context, ResultTypeInfo resultTypes)
     {
+        // A declaration without a body (an interface member, an abstract / extern method, or the
+        // declaration half of a partial method) has no implementation that could consume anything
+        if (context.Node is MethodDeclarationSyntax { Body: null, ExpressionBody: null })
+        {
+            return;
+        }
+
         var parameterList = context.Node switch
         {
             BaseMethodDeclarationSyntax method => method.ParameterList,
@@ -149,8 +162,8 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
         foreach (var parameter in parameterList.Parameters)
         {
-            if (model.GetDeclaredSymbol(parameter, ct) is not IParameterSymbol symbol
-                || !IsDirectResultType(symbol.Type, resultTypes))
+            var symbol = model.GetDeclaredSymbol(parameter, ct);
+            if (symbol == null || !IsDirectResultType(symbol.Type, resultTypes))
             {
                 continue;
             }
@@ -201,9 +214,16 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
     /// <summary>
     /// Whether two places can never both run, because they sit in different branches of the same
-    /// <c>if</c> / <c>switch</c> / <c>?:</c>.
+    /// <c>if</c> / <c>switch</c> / <c>?:</c>, or because one of them sits in a branch that always
+    /// leaves the method before the other one is reached.
     /// </summary>
-    private static bool AreMutuallyExclusive(SyntaxNode first, SyntaxNode second)
+    private static bool AreMutuallyExclusive(SyntaxNode first, SyntaxNode second) =>
+        AreInDifferentBranches(first, second) || ExitsBefore(first, second) || ExitsBefore(second, first);
+
+    /// <summary>
+    /// Whether two places sit in different branches of the same <c>if</c> / <c>switch</c> / <c>?:</c>.
+    /// </summary>
+    private static bool AreInDifferentBranches(SyntaxNode first, SyntaxNode second)
     {
         var firstGuards = GetBranchGuards(first);
         if (firstGuards.Count == 0)
@@ -221,6 +241,70 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="node"/> sits in a branch that never falls through to the code after
+    /// its owner — the branch returns or throws — while <paramref name="other"/> sits outside of it.
+    /// </summary>
+    /// <remarks>
+    /// Only <c>return</c> and <c>throw</c> count as leaving the method; <c>break</c> / <c>continue</c>
+    /// leave the loop instead, so the code after the loop can still run on the next iteration.
+    /// </remarks>
+    private static bool ExitsBefore(SyntaxNode node, SyntaxNode other)
+    {
+        for (SyntaxNode? current = node; current != null; current = current.Parent)
+        {
+            SyntaxNode? branch = current.Parent switch
+            {
+                IfStatementSyntax ifStatement when ReferenceEquals(ifStatement.Statement, current)
+                    => ifStatement.Statement,
+
+                ElseClauseSyntax { Parent: IfStatementSyntax ifStatement } elseClause
+                    when ReferenceEquals(elseClause.Statement, current) => elseClause.Statement,
+
+                SwitchStatementSyntax when current is SwitchSectionSyntax section => section,
+                _ => null,
+            };
+
+            if (branch != null && AlwaysExits(branch) && !branch.Span.Contains(other.Span))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the statement always leaves the current method</summary>
+    private static bool AlwaysExits(SyntaxNode? statement)
+    {
+        switch (statement)
+        {
+            case null:
+                return false;
+
+            case ReturnStatementSyntax:
+            case ThrowStatementSyntax:
+                return true;
+
+            case BlockSyntax block:
+                return block.Statements.Count > 0
+                       && AlwaysExits(block.Statements[block.Statements.Count - 1]);
+
+            case SwitchSectionSyntax section:
+                return section.Statements.Count > 0
+                       && AlwaysExits(section.Statements[section.Statements.Count - 1]);
+
+            // Only a complete if/else can never fall through
+            case IfStatementSyntax ifStatement:
+                return ifStatement.Else != null
+                       && AlwaysExits(ifStatement.Statement)
+                       && AlwaysExits(ifStatement.Else.Statement);
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>The branch containers (and the branch index) a node sits in</summary>
@@ -297,7 +381,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     /// <summary>Collects every place where the given symbol holding a Result is consumed</summary>
     private static void CollectConsumptions(
         ISymbol symbol,
-        SyntaxNode scope,
+        SyntaxNode? scope,
         SemanticModel model,
         CancellationToken ct,
         List<SyntaxNode> consumptionSites
@@ -425,9 +509,9 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             case AssignmentExpressionSyntax assignment when assignment.Right == node:
                 return !IsDiscardTarget(assignment.Left);
 
-            // Dispose() or Err.Wrap on the result's error
+            // Dispose() on the Result, or its error being handed over
             case MemberAccessExpressionSyntax memberAccess when memberAccess.Expression == node:
-                return IsDisposeCall(memberAccess) || IsErrWrapCall(memberAccess, model, ct);
+                return IsDisposeCall(memberAccess) || IsErrHandOff(memberAccess, model, ct);
 
             default:
                 return false;
@@ -460,8 +544,12 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         return receiver.Parent is InvocationExpressionSyntax invocation && invocation.Expression == receiver;
     }
 
-    /// <summary>Detects <c>result.err.Wrap(...)</c>, which hands the error over to a new error</summary>
-    private static bool IsErrWrapCall(MemberAccessExpressionSyntax errAccess, SemanticModel model, CancellationToken ct)
+    /// <summary>
+    /// Detects the ways the error of the Result is handed over to somebody else:
+    /// <c>result.err.Wrap(...)</c> / <c>result.err.AddCallerFrame(...)</c>, or the error value itself
+    /// being returned or passed as an argument.
+    /// </summary>
+    private static bool IsErrHandOff(MemberAccessExpressionSyntax errAccess, SemanticModel model, CancellationToken ct)
     {
         if (errAccess.Name.Identifier.ValueText != "err")
         {
@@ -469,24 +557,54 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         }
 
         var errorReceiver = SkipNullForgiving(errAccess);
-        if (errorReceiver.Parent is not MemberAccessExpressionSyntax wrapAccess
-            || wrapAccess.Expression != errorReceiver
-            || wrapAccess.Name.Identifier.ValueText != "Wrap")
+
+        // The error value itself leaves the method: ownership goes with it
+        if (IsHandedOffValue(errorReceiver, model, ct))
+        {
+            return true;
+        }
+
+        if (errorReceiver.Parent is not MemberAccessExpressionSyntax handOffAccess
+            || handOffAccess.Expression != errorReceiver
+            || handOffAccess.Name.Identifier.ValueText is not ("Wrap" or "AddCallerFrame"))
         {
             return false;
         }
 
-        var wrapReceiver = SkipNullForgiving(wrapAccess);
-        if (wrapReceiver.Parent is not InvocationExpressionSyntax invocation || invocation.Expression != wrapReceiver)
+        var handOffReceiver = SkipNullForgiving(handOffAccess);
+        if (handOffReceiver.Parent is not InvocationExpressionSyntax invocation || invocation.Expression != handOffReceiver)
         {
             return false;
         }
 
-        return model.GetSymbolInfo(invocation, ct).Symbol is IMethodSymbol { Name: "Wrap" };
+        return model.GetSymbolInfo(invocation, ct).Symbol is IMethodSymbol { Name: "Wrap" or "AddCallerFrame" };
+    }
+
+    /// <summary>Whether the expression leaves the method as its return value or as an argument</summary>
+    private static bool IsHandedOffValue(ExpressionSyntax expression, SemanticModel model, CancellationToken ct)
+    {
+        var node = Unwrap(expression);
+        switch (node.Parent)
+        {
+            case ArgumentSyntax argument:
+                return argument.Parent is ArgumentListSyntax;
+
+            case ReturnStatementSyntax:
+                return true;
+
+            case ArrowExpressionClauseSyntax arrow:
+                return !IsVoidReturning(arrow.Parent, model, ct);
+
+            case LambdaExpressionSyntax lambda:
+                return !IsVoidReturning(lambda, model, ct);
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>Whether the owner of an expression body returns void (so the value is discarded)</summary>
-    private static bool IsVoidReturning(SyntaxNode owner, SemanticModel model, CancellationToken ct)
+    private static bool IsVoidReturning(SyntaxNode? owner, SemanticModel model, CancellationToken ct)
     {
         if (owner == null)
         {
@@ -506,10 +624,10 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
     #region Utils
 
-    private static bool IsResultType(ITypeSymbol type, ResultTypeInfo resultTypes) =>
+    private static bool IsResultType(ITypeSymbol? type, ResultTypeInfo resultTypes) =>
         type != null && resultTypes.TryGetResult(type, out _);
 
-    private static bool IsDirectResultType(ITypeSymbol type, ResultTypeInfo resultTypes) =>
+    private static bool IsDirectResultType(ITypeSymbol? type, ResultTypeInfo resultTypes) =>
         type != null
         && resultTypes.TryGetResult(type, out INamedTypeSymbol result)
         && SymbolEqualityComparer.Default.Equals(type, result);

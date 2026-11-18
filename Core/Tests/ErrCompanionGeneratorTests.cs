@@ -47,6 +47,12 @@ public enum IOErr
         Assert.That(text, Does.Contain("global::IOErr.NotFound,"));
         Assert.That(text, Does.Contain(@"msg ?? $""File {path} Do Not Exist"""));
         Assert.That(text, Does.Contain("Path that was not found"));
+
+        // Arguments are dropped before the instance goes back into the pool
+        Assert.That(text, Does.Contain("private void ClearArgs()"));
+        Assert.That(text, Does.Contain("this.path = default;"));
+        Assert.That(text, Does.Contain("ClearArgs();"));
+        Assert.That(text, Does.Contain("s_Pool.Push(this);"));
     }
 
     [Test]
