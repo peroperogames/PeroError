@@ -337,6 +337,17 @@ public sealed class Subject
         AssertIds(diagnostics, "PERR100");
     }
     [Test]
+    public void ReportsOverwrittenExtractedLocalTest()
+    {
+        // The payload was taken out, then a fresh Result overwrote the local without being consumed
+        var diagnostics = Run(Source(
+            "var result = Helper.DoWorkValue();\n"
+            + "result.TryGetValue(out var value, out var err);\n"
+            + "result = Helper.DoWorkValue();"));
+
+        AssertIds(diagnostics, "PERR104");
+    }
+    [Test]
     public void ReportsConsumedTwiceWhenBranchDoesNotExitTest()
     {
         // Both places can run: the if branch falls through instead of leaving the method
@@ -372,6 +383,42 @@ foreach (var item in new[] { 1, 2 })
         AssertIds(diagnostics, "PERR102");
     }
 
+    [Test]
+    public void IgnoresExtractedPayloadTest()
+    {
+        // TryGetValue drains the Result: the value and the error leave through the out parameters
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWorkValue();
+if (result.TryGetValue(out var value, out var err))
+{
+    System.Console.WriteLine(value);
+}
+else
+{
+    System.Console.WriteLine(err.kind);
+}"));
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresExtractedAndDisposedTest()
+    {
+        // The shape the README uses: extract, release on success, hand the error on when failed
+        var diagnostics = Run(Source(@"
+var result = Helper.DoWorkValue();
+if (result.TryGetValue(out var value, out var err))
+{
+    result.Dispose();
+    System.Console.WriteLine(value);
+}
+else
+{
+    err.Dispose();
+}"));
+
+        AssertIds(diagnostics);
+    }
     [Test]
     public void IgnoresConsumedInSeparateBranchesTest()
     {

@@ -28,8 +28,9 @@ namespace PeroTools2.Error.Analyzers;
 /// or an explicit <c>r.Dispose()</c>;</item>
 /// <item>it is returned from the method (<c>return r;</c>, expression-bodied members and lambdas);</item>
 /// <item>it is passed as an argument to another method;</item>
-/// <item>its error is handed over: wrapped into a new error with <c>Err.Wrap</c>, propagated with
-/// <c>AddCallerFrame</c>, or returned / passed on as an argument.</item>
+/// <item>its payload is taken out with <c>TryGetValue(...)</c>, or its error is handed over: wrapped
+/// into a new error with <c>Err.Wrap</c>, propagated with <c>AddCallerFrame</c>, or returned / passed on
+/// as an argument.</item>
 /// </list>
 /// <para>
 /// Every other use — reading <c>isOK</c> / <c>err</c> / <c>value</c>, calling <c>Unwrap()</c> /
@@ -194,10 +195,10 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
             var consumptionSites = new List<SyntaxNode>(2);
             var overwrites = new List<SyntaxNode>(1);
-            CollectConsumptions(symbol, identifiers, model, ct, consumptionSites, overwrites);
+            bool payloadTakenOut = CollectConsumptions(symbol, identifiers, model, ct, consumptionSites, overwrites);
             ReportConsumption(
                 context, Diagnostics.unconsumedResultParameter, symbol.Name,
-                parameter.Identifier.GetLocation(), consumptionSites, overwrites);
+                parameter.Identifier.GetLocation(), consumptionSites, overwrites, payloadTakenOut);
         }
     }
 
@@ -212,10 +213,12 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         string name,
         Location declarationLocation,
         List<SyntaxNode> consumptionSites,
-        List<SyntaxNode> overwrites
+        List<SyntaxNode> overwrites,
+        bool payloadTakenOut
     )
     {
-        if (consumptionSites.Count == 0)
+        // Taking the payload out with TryGetValue already drained the Result
+        if (consumptionSites.Count == 0 && !payloadTakenOut)
         {
             context.ReportDiagnostic(Diagnostic.Create(unconsumedDescriptor, declarationLocation, name));
             return;
@@ -418,6 +421,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 return false;
         }
     }
+
     #endregion
 
     #region Local variables
@@ -473,10 +477,10 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 consumptionSites.Add(declarator);
             }
 
-            CollectConsumptions(localSymbol, identifiers, model, ct, consumptionSites, overwrites);
+            bool payloadTakenOut = CollectConsumptions(localSymbol, identifiers, model, ct, consumptionSites, overwrites);
             ReportConsumption(
                 context, Diagnostics.unconsumedResultVariable, localSymbol.Name,
-                declarator.Identifier.GetLocation(), consumptionSites, overwrites);
+                declarator.Identifier.GetLocation(), consumptionSites, overwrites, payloadTakenOut);
         }
     }
 
@@ -509,8 +513,11 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    /// <summary>Collects every place where the given symbol holding a Result is consumed</summary>
-    private static void CollectConsumptions(
+    /// <summary>
+    /// Collects every place where the given symbol holding a Result is consumed, and whether its
+    /// payload was taken out with <c>TryGetValue(...)</c>.
+    /// </summary>
+    private static bool CollectConsumptions(
         ISymbol symbol,
         List<IdentifierNameSyntax> identifiers,
         SemanticModel model,
@@ -519,6 +526,8 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         List<SyntaxNode> overwrites
     )
     {
+        bool payloadTakenOut = false;
+
         // The name is filtered before GetSymbolInfo, which is the expensive query
         foreach (var identifier in identifiers)
         {
@@ -534,11 +543,37 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
+            // TryGetValue drains the Result: its value and its error leave through the out parameters,
+            // so the Result itself has nothing left to hand over
+            if (IsPayloadExtraction(identifier, model, ct))
+            {
+                payloadTakenOut = true;
+                continue;
+            }
+
             if (IsConsumed(identifier, model, ct))
             {
                 consumptionSites.Add(identifier);
             }
         }
+
+        return payloadTakenOut;
+    }
+
+    /// <summary>Detects <c>result.TryGetValue(...)</c>: the payload is taken out of the Result</summary>
+    private static bool IsPayloadExtraction(ExpressionSyntax expression, SemanticModel model, CancellationToken ct)
+    {
+        if (expression.Parent is not MemberAccessExpressionSyntax memberAccess
+            || memberAccess.Expression != expression
+            || memberAccess.Name.Identifier.ValueText != "TryGetValue")
+        {
+            return false;
+        }
+
+        var receiver = SkipNullForgiving(memberAccess);
+        return receiver.Parent is InvocationExpressionSyntax invocation
+               && invocation.Expression == receiver
+               && model.GetSymbolInfo(invocation, ct).Symbol is IMethodSymbol { Name: "TryGetValue" };
     }
 
     /// <summary>Whether the identifier is written to instead of read (assignment target or <c>out</c> argument)</summary>
@@ -661,6 +696,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
         return expression;
     }
+
     private static bool IsDiscardTarget(ExpressionSyntax target) =>
         target is IdentifierNameSyntax { Identifier.ValueText: "_" };
 
@@ -760,7 +796,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         if (owner is LambdaExpressionSyntax lambda)
         {
             return model.GetTypeInfo(lambda, ct).ConvertedType
-                   is INamedTypeSymbol { DelegateInvokeMethod: { ReturnsVoid: true } };
+                is INamedTypeSymbol { DelegateInvokeMethod.ReturnsVoid: true };
         }
 
         return model.GetDeclaredSymbol(owner, ct) is IMethodSymbol { ReturnsVoid: true };
@@ -811,7 +847,7 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         ConditionalAccessExpressionSyntax conditionalAccess => conditionalAccess.ToString(),
         ParenthesizedExpressionSyntax parenthesized => DescribeExpression(parenthesized.Expression),
         CastExpressionSyntax cast => DescribeExpression(cast.Expression),
-        _ => expression.ToString(),
+        _ => expression.ToString()
     };
 
     #endregion

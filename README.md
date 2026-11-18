@@ -78,9 +78,6 @@ Or install via CLI:
 ```sh
 openupm add com.prpr.error
 ```
-
-The bundled runtime assembly is a **.NET Standard 2.1** build, so the player settings need `Api Compatibility Level` set to `.NET Standard 2.1` (Unity 2021.2+) or above. The analyzer and generator assemblies stay **.NET Standard 2.0**, which is what Unity's compiler host loads them as.
-
 ## Features
 
 ### Quick start
@@ -223,13 +220,12 @@ static string DealWithIOError(Result<string, IOErr> result)
 public Result<string, IOErr> LoadConfig(string path)
 {
     var readResult = ReadFromFile(path);
-    if (!readResult.isOK)
+    if (!readResult.TryGetValue(out var content, out var err))
     {
-        return readResult.err!.AddCallerFrame(); // one more frame; ownership moves to the caller
+        return err.AddCallerFrame(); // one more frame; ownership moves to the caller
     }
 
-    readResult.Dispose();
-    return readResult.value;
+    return content;
 }
 ```
 
@@ -274,9 +270,9 @@ A `Result` counts as consumed when, and only when:
 | 1 | it is disposed | `using var r = Load();` · `using (r) { }` · `r.Dispose();` |
 | 2 | it is returned | `return r;` · `Result<string, IOErr> M() => Load();` |
 | 3 | it is passed as an argument | `Handle(Load());` |
-| 4 | its error is handed over — wrapped into a new error, propagated with one more frame, or returned / passed on directly | `return r.err.Wrap(IOErr.NotFound, "not found");` · `return r.err!.AddCallerFrame();` |
+| 4 | its payload is taken out, or its error is handed over — wrapped into a new error, propagated with one more frame, or returned / passed on directly | `r.TryGetValue(out var value, out var err);` · `return err.Wrap(IOErr.NotFound, "not found");` · `return err.AddCallerFrame();` |
 
-Reading `isOK` / `err` / `value`, calling `Unwrap()` / `Match()` / `Switch()`, or simply dropping the value does **not** consume it — the current method still owns it.
+Reading `isOK`, inspecting the obsolete `err` / `value` accessors, calling `Unwrap()` / `Match()` / `Switch()`, or simply dropping the value does **not** consume it — the current method still owns it. `TryGetValue(...)` is different: it takes the value and the error out of the Result, so the Result is drained.
 
 Consuming in two places that can never both run is not double consumption either: the two branches of one `if` / `switch` / `?:`, or the code after a branch that ends with `return` / `throw`.
 
@@ -294,13 +290,12 @@ Consuming twice is a real bug, not just a style issue: the error goes back to th
 
 ```csharp
 var readResult = ReadFromFile(path);
-if (!readResult.isOK)
+if (!readResult.TryGetValue(out var content, out var err))
 {
-    return readResult.err!.Wrap(ConfigErr.NotFound, "config not found"); // rule 4: ownership moves on
+    return err.Wrap(ConfigErr.NotFound, "config not found"); // ownership moves on with the new error
 }
 
-string content = readResult.value;
-readResult.Dispose();                                                   // success path: release it
+return content; // success: the value is out and there is no error left to release
 ```
 
 The failure branch returns, so the two consumption points cannot both run on one path — that is exactly what the analyzer checks for.
