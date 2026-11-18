@@ -391,6 +391,28 @@ else
     }
 
     [Test]
+    public void IgnoresConsumedInConditionalBranchesTest()
+    {
+        // Both branches of one ?: consume the Result: only one of them evaluates
+        var diagnostics = Run(prelude + @"
+public static class Subject
+{
+    public static int Test(bool flag)
+    {
+        var result = Helper.DoWork();
+        return flag ? Consume(result) : Consume(result);
+    }
+
+    private static int Consume(Result<MyErr> result)
+    {
+        result.Dispose();
+        return 1;
+    }
+}");
+
+        AssertIds(diagnostics);
+    }
+    [Test]
     public void IgnoresDisposedAndWrappedInSeparateBranchesTest()
     {
         // The shape the README recommends: dispose on success, wrap the error on failure

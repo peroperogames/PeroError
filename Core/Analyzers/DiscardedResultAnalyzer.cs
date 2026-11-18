@@ -231,87 +231,161 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        // Consuming it in two branches of the same if/switch is fine: only one of them runs
-        for (int i = 0; i < consumptionSites.Count; i++)
+        // Nothing can be consumed twice by a single place
+        if (consumptionSites.Count < 2)
         {
-            for (int j = i + 1; j < consumptionSites.Count; j++)
+            return;
+        }
+
+        // The branch path of every site is built once, so comparing two sites afterwards only looks
+        // at the small precomputed sets instead of walking the syntax tree again for every pair
+        var sites = new ConsumptionSite[consumptionSites.Count];
+        for (int i = 0; i < sites.Length; i++)
+        {
+            sites[i] = new ConsumptionSite(consumptionSites[i]);
+        }
+
+        // Consuming it in two branches of the same if/switch is fine: only one of them runs
+        for (int i = 0; i < sites.Length; i++)
+        {
+            for (int j = i + 1; j < sites.Length; j++)
             {
-                if (AreMutuallyExclusive(consumptionSites[i], consumptionSites[j]))
+                if (sites[i].IsMutuallyExclusiveWith(sites[j]))
                 {
                     continue;
                 }
 
                 context.ReportDiagnostic(Diagnostic.Create(
                     Diagnostics.doubleConsumedResult,
-                    consumptionSites[j].GetLocation(),
+                    sites[j].location,
                     name));
                 return;
             }
         }
     }
 
-    /// <summary>
-    /// Whether two places can never both run, because they sit in different branches of the same
-    /// <c>if</c> / <c>switch</c> / <c>?:</c>, or because one of them sits in a branch that always
-    /// leaves the method before the other one is reached.
-    /// </summary>
-    private static bool AreMutuallyExclusive(SyntaxNode first, SyntaxNode second) =>
-        AreInDifferentBranches(first, second) || ExitsBefore(first, second) || ExitsBefore(second, first);
-
-    /// <summary>
-    /// Whether two places sit in different branches of the same <c>if</c> / <c>switch</c> / <c>?:</c>.
-    /// </summary>
-    private static bool AreInDifferentBranches(SyntaxNode first, SyntaxNode second)
+    /// <summary>A place where a Result is consumed, together with the branch path it sits on</summary>
+    private sealed class ConsumptionSite
     {
-        var firstGuards = GetBranchGuards(first);
-        if (firstGuards.Count == 0)
+        /// <summary>The consuming identifier</summary>
+        private readonly SyntaxNode m_Node;
+
+        /// <summary>Branch containers of the site, mapped to the index of the branch inside them</summary>
+        private readonly Dictionary<SyntaxNode, int>? m_Guards;
+
+        /// <summary>Branches that contain the site and always leave the method (<c>return</c> / <c>throw</c>)</summary>
+        private readonly List<SyntaxNode>? m_ExitingBranches;
+
+        public ConsumptionSite(SyntaxNode node)
         {
+            m_Node = node;
+            (m_Guards, m_ExitingBranches) = AnalyzeBranchPath(node);
+        }
+
+        /// <summary>Where the consumption happens</summary>
+        public Location location => m_Node.GetLocation();
+
+        /// <summary>
+        /// Whether the two sites can never both run, because they sit in different branches of the same
+        /// <c>if</c> / <c>switch</c> / <c>?:</c>, or because one of them sits in a branch that always
+        /// leaves the method before the other one is reached.
+        /// </summary>
+        public bool IsMutuallyExclusiveWith(ConsumptionSite other) =>
+            DivergesFrom(other) || ExitsBefore(other) || other.ExitsBefore(this);
+
+        /// <summary>Whether the two sites were taken in different branches of one shared construct</summary>
+        private bool DivergesFrom(ConsumptionSite other)
+        {
+            if (m_Guards == null || other.m_Guards == null)
+            {
+                return false;
+            }
+
+            // Probing the smaller map keeps the cost proportional to the shallower branch path
+            var (first, second) = m_Guards.Count <= other.m_Guards.Count
+                ? (m_Guards, other.m_Guards)
+                : (other.m_Guards, m_Guards);
+
+            foreach (var guard in first)
+            {
+                if (second.TryGetValue(guard.Key, out int branch) && branch != guard.Value)
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
-        var secondGuards = GetBranchGuards(second);
-        foreach (var guard in firstGuards)
+        /// <summary>Whether this site sits in an exiting branch that the other site is outside of</summary>
+        private bool ExitsBefore(ConsumptionSite other)
         {
-            if (secondGuards.TryGetValue(guard.Key, out int secondBranch) && secondBranch != guard.Value)
+            if (m_ExitingBranches == null)
             {
-                return true;
+                return false;
             }
+
+            foreach (var branch in m_ExitingBranches)
+            {
+                if (!branch.Span.Contains(other.m_Node.Span))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
-        return false;
-    }
-
-    /// <summary>
-    /// Whether <paramref name="node"/> sits in a branch that never falls through to the code after
-    /// its owner — the branch returns or throws — while <paramref name="other"/> sits outside of it.
-    /// </summary>
-    /// <remarks>
-    /// Only <c>return</c> and <c>throw</c> count as leaving the method; <c>break</c> / <c>continue</c>
-    /// leave the loop instead, so the code after the loop can still run on the next iteration.
-    /// </remarks>
-    private static bool ExitsBefore(SyntaxNode node, SyntaxNode other)
-    {
-        for (SyntaxNode? current = node; current != null; current = current.Parent)
+        /// <summary>The branch containers of a node, and the branches among them that always leave the method</summary>
+        private static (Dictionary<SyntaxNode, int>? guards, List<SyntaxNode>? exitingBranches) AnalyzeBranchPath(SyntaxNode node)
         {
-            SyntaxNode? branch = current.Parent switch
+            Dictionary<SyntaxNode, int>? guards = null;
+            List<SyntaxNode>? exitingBranches = null;
+
+            for (SyntaxNode? current = node; current != null; current = current.Parent)
             {
-                IfStatementSyntax ifStatement when ReferenceEquals(ifStatement.Statement, current)
-                    => ifStatement.Statement,
+                SyntaxNode container;
+                SyntaxNode branch;
+                int branchIndex;
 
-                ElseClauseSyntax { Parent: IfStatementSyntax } elseClause
-                    when ReferenceEquals(elseClause.Statement, current) => elseClause.Statement,
+                switch (current.Parent)
+                {
+                    case IfStatementSyntax ifStatement when ReferenceEquals(ifStatement.Statement, current):
+                        (container, branch, branchIndex) = (ifStatement, ifStatement.Statement, 1);
+                        break;
 
-                SwitchStatementSyntax when current is SwitchSectionSyntax section => section,
-                _ => null,
-            };
+                    case ElseClauseSyntax { Parent: IfStatementSyntax ifStatement } elseClause
+                        when ReferenceEquals(elseClause.Statement, current):
+                        (container, branch, branchIndex) = (ifStatement, elseClause.Statement, 2);
+                        break;
 
-            if (branch != null && AlwaysExits(branch) && !branch.Span.Contains(other.Span))
-            {
-                return true;
+                    case ConditionalExpressionSyntax conditional
+                        when ReferenceEquals(conditional.WhenTrue, current) || ReferenceEquals(conditional.WhenFalse, current):
+                        (container, branch, branchIndex) = (
+                            conditional,
+                            conditional,
+                            ReferenceEquals(conditional.WhenTrue, current) ? 1 : 2);
+                        break;
+
+                    case SwitchStatementSyntax switchStatement when current is SwitchSectionSyntax section:
+                        (container, branch, branchIndex) = (switchStatement, section, switchStatement.Sections.IndexOf(section) + 1);
+                        break;
+
+                    default:
+                        continue;
+                }
+
+                guards ??= new Dictionary<SyntaxNode, int>(2);
+                guards[container] = branchIndex;
+
+                if (AlwaysExits(branch))
+                {
+                    (exitingBranches ??= new List<SyntaxNode>(1)).Add(branch);
+                }
             }
-        }
 
-        return false;
+            return (guards, exitingBranches);
+        }
     }
 
     /// <summary>Whether the statement always leaves the current method</summary>
@@ -344,32 +418,6 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 return false;
         }
     }
-
-    /// <summary>The branch containers (and the branch index) a node sits in</summary>
-    private static Dictionary<SyntaxNode, int> GetBranchGuards(SyntaxNode node)
-    {
-        var guards = new Dictionary<SyntaxNode, int>();
-        for (var current = node; current != null; current = current.Parent)
-        {
-            switch (current.Parent)
-            {
-                case IfStatementSyntax ifStatement:
-                    guards[ifStatement] = ReferenceEquals(ifStatement.Statement, current) ? 1 : 2;
-                    break;
-
-                case ConditionalExpressionSyntax conditional:
-                    guards[conditional] = ReferenceEquals(conditional.WhenTrue, current) ? 1 : 2;
-                    break;
-
-                case SwitchStatementSyntax switchStatement when current is SwitchSectionSyntax section:
-                    guards[switchStatement] = switchStatement.Sections.IndexOf(section) + 1;
-                    break;
-            }
-        }
-
-        return guards;
-    }
-
     #endregion
 
     #region Local variables
