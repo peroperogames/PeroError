@@ -93,6 +93,19 @@ public class ResultTest
     }
 
     [Test]
+    public void TryGetValueReportsNullSuccessValueTest()
+    {
+        // A successful Result may hold null, so the value does not deserve a [NotNullWhen] promise
+        var result = Result<string, TestErrKind>.OK(null);
+
+        Assert.That(result.TryGetValue(out var value, out var error), Is.True);
+        Assert.That(value, Is.Null);
+        Assert.That(error, Is.Null);
+
+        Assert.That(result.TryGetValue(out string onlyValue), Is.True);
+        Assert.That(onlyValue, Is.Null);
+    }
+    [Test]
     public void MatchTest()
     {
         Assert.That(
@@ -183,6 +196,19 @@ public class ResultWithoutValueTest
         m_FailedResult = Result<TestErrKind>.Fail(Err.New(TestErrKind.HighLevel, failed_message));
     }
 
+    [Test]
+    public void TryGetValueReportsNullSuccessValueTest()
+    {
+        // A successful Result may hold null, so the value does not deserve a [NotNullWhen] promise
+        var result = Result<string, TestErrKind>.OK(null);
+
+        Assert.That(result.TryGetValue(out var value, out var error), Is.True);
+        Assert.That(value, Is.Null);
+        Assert.That(error, Is.Null);
+
+        Assert.That(result.TryGetValue(out string onlyValue), Is.True);
+        Assert.That(onlyValue, Is.Null);
+    }
     [Test]
     public void MatchTest()
     {

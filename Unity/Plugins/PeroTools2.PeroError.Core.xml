@@ -110,6 +110,15 @@
         <member name="P:PeroTools2.Error.Err`1.exception">
             <inheritdoc/>
         </member>
+        <member name="P:PeroTools2.Error.Err`1.rentVersion">
+            <summary>The rent this instance currently belongs to</summary>
+        </member>
+        <member name="M:PeroTools2.Error.Err`1.Return(PeroTools2.Error.Err{`0},System.Int32)">
+            <summary>
+            Returns the error only when the caller still holds the rent it was created with: a stale
+            reference (a struct copy that outlived a dispose, for example) is ignored.
+            </summary>
+        </member>
         <member name="M:PeroTools2.Error.Err`1.OnReturn">
             <summary>
             Called when the error goes back to the pool. A derived companion class overrides this to keep

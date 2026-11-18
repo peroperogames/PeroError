@@ -238,6 +238,23 @@ public sealed class ErrTests
     }
 
     [Test]
+    public void StaleResultCopyDoesNotReturnARentedErrorTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "first");
+#pragma warning disable PERR102 // the stale copy is disposed on purpose, to check that it is ignored
+        var stale = Result<TestErrKind>.Fail(err);
+        stale.Dispose(); // back into the pool
+
+        var live = Err.New(TestErrKind.LowLevel, "second");
+        stale.Dispose(); // stale copy of an earlier rent: must be ignored
+#pragma warning restore PERR102
+
+        Assert.That(live.message, Is.EqualTo("second")); // the live owner was not reset behind its back
+
+        var next = Err.New(TestErrKind.LowLevel, "third");
+        Assert.That(next, Is.Not.SameAs(live)); // and the instance was not handed out twice
+    }
+    [Test]
     public void ReturnedErrorKeepsCausedByChainTest()
     {
         var root = Err.New(TestErrKind.LowLevel, "root");

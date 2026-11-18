@@ -149,6 +149,13 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     // Guards against returning the same instance twice, which would hand it out to two owners.
     private int m_Pooled;
 
+    // Bumped every time the instance is handed out, so a stale reference from an earlier rent cannot
+    // return it while somebody else owns it
+    private int m_RentVersion;
+
+    /// <summary>The rent this instance currently belongs to</summary>
+    internal int rentVersion => m_RentVersion;
+
     private Lazy<List<string>> notes { get; } = new(static () => new List<string>(5));
 
     private static readonly ConcurrentStack<Err<TKind>> s_Pool = new();
@@ -177,6 +184,20 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
             err = new Err<TKind>(kind, message, causedBy, exception, frames);
         }
         return err;
+    }
+
+    /// <summary>
+    /// Returns the error only when the caller still holds the rent it was created with: a stale
+    /// reference (a struct copy that outlived a dispose, for example) is ignored.
+    /// </summary>
+    internal static void Return(Err<TKind> err, int version)
+    {
+        if (err.m_RentVersion != version)
+        {
+            return;
+        }
+
+        Return(err);
     }
 
     internal static void Return(Err<TKind> err)
@@ -219,6 +240,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
         m_CausedBy = causedBy;
         m_Exception = exception;
         stackTrace = [callerInfo];
+        m_RentVersion = 1;
     }
 
     private Err(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
@@ -229,6 +251,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
         m_Exception = exception;
         // Copy: the caller keeps owning the list it passed in, e.g. the stack trace of another error
         stackTrace = new List<CallerInfo>(frames);
+        m_RentVersion = 1;
     }
 
     /// <summary>Appends one frame of stack trace info</summary>
@@ -353,6 +376,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, CallerInfo callerInfo)
     {
         m_Pooled = 0;
+        m_RentVersion++;
         this.kind = kind;
         m_Message = message;
         m_CausedBy = causedBy;
@@ -373,6 +397,7 @@ public class Err<TKind> : ErrBase, IDisposable where TKind : struct, Enum
     protected internal void Init(TKind kind, string message, ErrBase causedBy, Exception exception, List<CallerInfo> frames)
     {
         m_Pooled = 0;
+        m_RentVersion++;
         this.kind = kind;
         m_Message = message;
         m_CausedBy = causedBy;

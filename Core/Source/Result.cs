@@ -31,6 +31,10 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
     /// </summary>
     public bool isOK => err == null; // Zero-constructible struct: no isOK field, so illegal states cannot exist
 
+    // The rent the error belongs to: a copy of this struct must not return an error that has already
+    // been handed out to somebody else in the meantime
+    private readonly int m_ErrVersion;
+
     object? IUnionMembers.Value => isOK ? Succeed.instance : err;
 
     /// <summary>Tries to get the error; returns true only when the Result failed</summary>
@@ -56,6 +60,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
             return;
         }
         this.err = err;
+        m_ErrVersion = err.rentVersion;
     }
 
     /// <summary>Creates a successful Result</summary>
@@ -130,7 +135,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
     {
         if (err != null)
         {
-            Err<TErrKind>.Return(err);
+            Err<TErrKind>.Return(err, m_ErrVersion);
         }
     }
 }
@@ -166,12 +171,16 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
     // Structs are always zero-constructible, so no separate isOK field is used, to prevent illegal states
     public bool isOK => err == null;
 
+    // The rent the error belongs to: a copy of this struct must not return an error that has already
+    // been handed out to somebody else in the meantime
+    private readonly int m_ErrVersion;
+
     object? IUnionMembers.Value => isOK ? m_Value : err;
 
     /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
     /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
     /// <param name="error">Receives the error when the Result failed</param>
-    public bool TryGetValue([NotNullWhen(true)] out T? result, [NotNullWhen(false)] out Err<TErrKind>? error)
+    public bool TryGetValue(out T? result, [NotNullWhen(false)] out Err<TErrKind>? error)
     {
         result = m_Value;
         error = err;
@@ -180,7 +189,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
 
     /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
     /// <param name="result">Receives the value when the Result succeeded (it may be null)</param>
-    public bool TryGetValue([NotNullWhen(true)] out T? result)
+    public bool TryGetValue(out T? result)
     {
         result = m_Value;
         return isOK;
@@ -199,6 +208,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
         // Even a null success value is a successful Result, so the state is recorded unconditionally.
         m_Value = value;
         err = null;
+        m_ErrVersion = 0;
     }
 
     private Result(Err<TErrKind>? err)
@@ -207,6 +217,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
         {
             m_Value = default;
             this.err = err;
+            m_ErrVersion = err.rentVersion;
         }
     }
 
@@ -238,7 +249,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
     {
         if (err != null)
         {
-            Err<TErrKind>.Return(err);
+            Err<TErrKind>.Return(err, m_ErrVersion);
         }
     }
 
@@ -327,7 +338,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
         object? Value { get; }
 
         /// <summary>Tries to get the value; returns true only when the Result succeeded</summary>
-        bool TryGetValue([NotNullWhen(true)] out T? result);
+        bool TryGetValue(out T? result);
 
         /// <summary>Tries to get the error; returns true only when the Result failed</summary>
         bool TryGetValue([NotNullWhen(true)] out Err<TErrKind>? error);
