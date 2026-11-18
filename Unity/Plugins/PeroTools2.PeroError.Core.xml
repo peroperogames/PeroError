@@ -389,6 +389,7 @@
             Asserts that the Result succeeded. Invokes <see cref="M:PeroTools2.Error.ErrBase.Panic"/> when it did not
             </summary>
             <exception cref="T:PeroTools2.Error.ManualPanicException">Thrown when called on a failed Result</exception>
+            <remarks>This call takes the Result over: the error is returned to the pool before the panic is thrown</remarks>
         </member>
         <member name="M:PeroTools2.Error.Result`1.Match``1(System.Func{``0},System.Func{PeroTools2.Error.Err{`0},``0})">
             <summary>
@@ -496,12 +497,14 @@
             and invokes <see cref="M:PeroTools2.Error.ErrBase.Panic"/> when it did not succeed
             </summary>
             <exception cref="T:PeroTools2.Error.ManualPanicException">Thrown when called on a failed Result</exception>
+            <remarks>This call takes the Result over: the error is returned to the pool before the panic is thrown</remarks>
         </member>
         <member name="M:PeroTools2.Error.Result`2.ValueOrDefault(`0)">
             <summary>
             Returns the value when the Result succeeded, otherwise returns the default value
             </summary>
             <param name="default">Value used when the Result failed</param>
+            <remarks>This call takes the Result over: the error is dropped, so it is returned to the pool</remarks>
         </member>
         <member name="M:PeroTools2.Error.Result`2.ValueOr(System.Func{PeroTools2.Error.Err{`1},`0})">
             <summary>

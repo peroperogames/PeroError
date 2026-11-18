@@ -24,18 +24,19 @@ namespace PeroTools2.Error.Analyzers;
 /// <remarks>
 /// <para>A Result is consumed when, and only when:</para>
 /// <list type="number">
-/// <item>it is disposed in the current method — <c>using var r = ...</c>, <c>using (...) { }</c>
-/// or an explicit <c>r.Dispose()</c>;</item>
+/// <item>one of its own methods is called, including extension methods — <c>Dispose()</c>,
+/// <c>Unwrap()</c>, <c>Match()</c>, <c>Switch()</c>, <c>Map()</c>, <c>Cast()</c>,
+/// <c>ValueOrDefault()</c> ... those methods own the Result and release it on success and on failure;</item>
 /// <item>it is returned from the method (<c>return r;</c>, expression-bodied members and lambdas);</item>
 /// <item>it is passed as an argument to another method;</item>
-/// <item>its payload is taken out with <c>TryGetValue(...)</c>, or its error is handed over: wrapped
-/// into a new error with <c>Err.Wrap</c>, propagated with <c>AddCallerFrame</c>, or returned / passed on
-/// as an argument.</item>
+/// <item>its payload is taken out with the two-<c>out</c> <c>TryGetValue(...)</c>, or its error is handed
+/// over: wrapped into a new error with <c>Err.Wrap</c>, propagated with <c>AddCallerFrame</c>, or returned /
+/// passed on as an argument.</item>
 /// </list>
 /// <para>
-/// Every other use — reading <c>isOK</c> / <c>err</c> / <c>value</c>, calling <c>Unwrap()</c> /
-/// <c>Match()</c> / <c>Switch()</c>, discarding it as a statement, storing it in a field or property,
-/// or awaiting a wrapper only to drop the value — does not consume the Result.
+/// Every other use — reading <c>isOK</c> / <c>err</c> / <c>value</c>, calling <c>ToString()</c> or the
+/// single-<c>out</c> <c>TryGetValue</c> overloads, discarding it as a statement, storing it in a field or
+/// property, or awaiting a wrapper only to drop the value — does not consume the Result.
 /// A Result that is consumed twice would hand its error back to the pool twice, so double
 /// consumption is reported as well; assigning over a Result (<c>r = Load();</c>) drops the value it
 /// held, which has its own diagnostic.
@@ -195,10 +196,10 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
 
             var consumptionSites = new List<SyntaxNode>(2);
             var overwrites = new List<SyntaxNode>(1);
-            bool payloadTakenOut = CollectConsumptions(symbol, identifiers, model, ct, consumptionSites, overwrites);
+            CollectConsumptions(symbol, identifiers, model, ct, consumptionSites, overwrites);
             ReportConsumption(
                 context, Diagnostics.unconsumedResultParameter, symbol.Name,
-                parameter.Identifier.GetLocation(), consumptionSites, overwrites, payloadTakenOut);
+                parameter.Identifier.GetLocation(), consumptionSites, overwrites);
         }
     }
 
@@ -213,12 +214,10 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         string name,
         Location declarationLocation,
         List<SyntaxNode> consumptionSites,
-        List<SyntaxNode> overwrites,
-        bool payloadTakenOut
+        List<SyntaxNode> overwrites
     )
     {
-        // Taking the payload out with TryGetValue already drained the Result
-        if (consumptionSites.Count == 0 && !payloadTakenOut)
+        if (consumptionSites.Count == 0)
         {
             context.ReportDiagnostic(Diagnostic.Create(unconsumedDescriptor, declarationLocation, name));
             return;
@@ -477,10 +476,10 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 consumptionSites.Add(declarator);
             }
 
-            bool payloadTakenOut = CollectConsumptions(localSymbol, identifiers, model, ct, consumptionSites, overwrites);
+            CollectConsumptions(localSymbol, identifiers, model, ct, consumptionSites, overwrites);
             ReportConsumption(
                 context, Diagnostics.unconsumedResultVariable, localSymbol.Name,
-                declarator.Identifier.GetLocation(), consumptionSites, overwrites, payloadTakenOut);
+                declarator.Identifier.GetLocation(), consumptionSites, overwrites);
         }
     }
 
@@ -513,11 +512,8 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    /// <summary>
-    /// Collects every place where the given symbol holding a Result is consumed, and whether its
-    /// payload was taken out with <c>TryGetValue(...)</c>.
-    /// </summary>
-    private static bool CollectConsumptions(
+    /// <summary>Collects every place where the given symbol holding a Result is consumed</summary>
+    private static void CollectConsumptions(
         ISymbol symbol,
         List<IdentifierNameSyntax> identifiers,
         SemanticModel model,
@@ -526,8 +522,6 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
         List<SyntaxNode> overwrites
     )
     {
-        bool payloadTakenOut = false;
-
         // The name is filtered before GetSymbolInfo, which is the expensive query
         foreach (var identifier in identifiers)
         {
@@ -543,37 +537,11 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
                 continue;
             }
 
-            // TryGetValue drains the Result: its value and its error leave through the out parameters,
-            // so the Result itself has nothing left to hand over
-            if (IsPayloadExtraction(identifier, model, ct))
-            {
-                payloadTakenOut = true;
-                continue;
-            }
-
             if (IsConsumed(identifier, model, ct))
             {
                 consumptionSites.Add(identifier);
             }
         }
-
-        return payloadTakenOut;
-    }
-
-    /// <summary>Detects <c>result.TryGetValue(...)</c>: the payload is taken out of the Result</summary>
-    private static bool IsPayloadExtraction(ExpressionSyntax expression, SemanticModel model, CancellationToken ct)
-    {
-        if (expression.Parent is not MemberAccessExpressionSyntax memberAccess
-            || memberAccess.Expression != expression
-            || memberAccess.Name.Identifier.ValueText != "TryGetValue")
-        {
-            return false;
-        }
-
-        var receiver = SkipNullForgiving(memberAccess);
-        return receiver.Parent is InvocationExpressionSyntax invocation
-               && invocation.Expression == receiver
-               && model.GetSymbolInfo(invocation, ct).Symbol is IMethodSymbol { Name: "TryGetValue" };
     }
 
     /// <summary>Whether the identifier is written to instead of read (assignment target or <c>out</c> argument)</summary>
@@ -675,9 +643,11 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
             case YieldStatementSyntax:
                 return true;
 
-            // Dispose() on the Result, or its error being handed over
+            // Any method called on the Result takes it over: Dispose(), Unwrap(), Match(), Switch(),
+            // Map(), Cast(), ValueOrDefault() or an extension method. Its error being handed over
+            // (Err.Wrap / AddCallerFrame) counts as well.
             case MemberAccessExpressionSyntax memberAccess when memberAccess.Expression == node:
-                return IsDisposeCall(memberAccess) || IsErrHandOff(memberAccess, model, ct);
+                return IsMethodTakeOver(memberAccess, model, ct) || IsErrHandOff(memberAccess, model, ct);
 
             default:
                 return false;
@@ -712,15 +682,45 @@ public sealed class DiscardedResultAnalyzer : DiagnosticAnalyzer
     private static bool IsMemberTarget(ExpressionSyntax target, SemanticModel model, CancellationToken ct) =>
         model.GetSymbolInfo(target, ct).Symbol is IFieldSymbol or IPropertySymbol;
 
-    private static bool IsDisposeCall(MemberAccessExpressionSyntax memberAccess)
+    /// <summary>
+    /// Whether the Result is passed to one of its own methods, or to an extension method that takes it
+    /// as <c>this</c>. The single-<c>out</c> <c>TryGetValue</c> overloads are the exception: union pattern
+    /// matching calls them once per pattern (<c>out Succeed</c> and <c>out Err</c>), so they cannot take
+    /// the value over.
+    /// </summary>
+    private static bool IsMethodTakeOver(MemberAccessExpressionSyntax memberAccess, SemanticModel model, CancellationToken ct)
     {
-        if (memberAccess.Name.Identifier.ValueText != "Dispose")
+        var receiver = SkipNullForgiving(memberAccess);
+        if (receiver.Parent is not InvocationExpressionSyntax invocation
+            || invocation.Expression != receiver
+            || model.GetSymbolInfo(invocation, ct).Symbol is not IMethodSymbol method)
         {
             return false;
         }
 
-        var receiver = SkipNullForgiving(memberAccess);
-        return receiver.Parent is InvocationExpressionSyntax invocation && invocation.Expression == receiver;
+        // ToString / Equals / GetHashCode are pure inspection and must not take the Result over
+        // (a struct overrides them through ValueType, so the names are checked as well)
+        if (method.Name is "ToString" or "Equals" or "GetHashCode" or "GetType")
+        {
+            return false;
+        }
+
+        if (method.Name != "TryGetValue")
+        {
+            return true;
+        }
+
+        int outParameters = 0;
+        foreach (var parameter in method.Parameters)
+        {
+            if (parameter.RefKind == RefKind.Out)
+            {
+                outParameters++;
+            }
+        }
+
+        // Two outs extract the value and the error: that is a real takeover
+        return outParameters > 1;
     }
 
     /// <summary>

@@ -132,8 +132,7 @@ static Result<string, ConfigErr> ReadConfig(string configPath)
     string configContent;
     if (readResult.TryGetValue(out var value, out var err))
     {
-        configContent = value;
-        readResult.Dispose(); // released: we are done with it
+        configContent = value; // TryGetValue took the value and the error out, nothing left to release
     }
     else
     {
@@ -263,8 +262,9 @@ A `Result` counts as consumed when, and only when:
 | 2 | it is returned | `return r;` · `Result<string, IOErr> M() => Load();` |
 | 3 | it is passed as an argument | `Handle(Load());` |
 | 4 | its payload is taken out, or its error is handed over — wrapped into a new error, propagated with one more frame, or returned / passed on directly | `r.TryGetValue(out var value, out var err);` · `return err.Wrap(IOErr.NotFound, "not found");` · `return err.AddCallerFrame();` |
+| 5 | one of its own methods is called — those methods own the Result and release it on success and on failure | `r.Unwrap();` · `r.Match(ok, fail);` · `r.ValueOrDefault();` · `r.SomeExtension();` |
 
-Reading `isOK`, inspecting the obsolete `err` / `value` accessors, calling `Unwrap()` / `Match()` / `Switch()`, or simply dropping the value does **not** consume it — the current method still owns it. `TryGetValue(...)` is different: it takes the value and the error out of the Result, so the Result is drained.
+Reading the obsolete `isOK` / `err` / `value` accessors, calling `ToString()`, or simply dropping the value does **not** consume it — the current method still owns it. Calling any method of the Result (`Dispose()`, `Unwrap()`, `Match()`, `Switch()`, `Map()`, `Cast()`, `ValueOrDefault()`, or an extension method) does consume it. The single-`out` `TryGetValue(...)` overloads are the exception, because union pattern matching calls them once per pattern; the two-`out` overload takes the value and the error out at once.
 
 Consuming in two places that can never both run is not double consumption either: the two branches of one `if` / `switch` / `?:`, or the code after a branch that ends with `return` / `throw`.
 
@@ -272,7 +272,7 @@ Storing a Result in a field or property is not a consumption either — the erro
 
 | ID | Reported when |
 | --- | --- |
-| `PERR100` | a produced Result is never consumed — `Load();`, `await LoadAsync();`, `Load().Unwrap();` |
+| `PERR100` | a produced Result is never consumed — `Load();`, `await LoadAsync();`, `Load().ToString();` |
 | `PERR101` | a local Result is never consumed |
 | `PERR102` | a Result is consumed more than once — `r.Dispose(); r.Dispose();`, `using var r = …; Handle(r);` |
 | `PERR103` | a Result parameter is never consumed |

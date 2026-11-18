@@ -255,6 +255,29 @@ public sealed class ErrTests
         Assert.That(next, Is.Not.SameAs(live)); // and the instance was not handed out twice
     }
     [Test]
+    public void FailedUnwrapReturnsTheErrorToThePoolTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "boom");
+        Result<TestErrKind> failed = err;
+
+        Assert.Catch<ManualPanicException>(() => failed.Unwrap());
+
+        // The panic holds the full error text already, so the instance goes back to the pool
+        Assert.That(err.message, Is.Empty);
+    }
+
+    [Test]
+    public void ValueOrDefaultReturnsTheErrorToThePoolTest()
+    {
+        var err = Err.New(TestErrKind.LowLevel, "boom");
+        Result<string, TestErrKind> failed = err;
+
+        Assert.That(failed.ValueOrDefault("fallback"), Is.EqualTo("fallback"));
+
+        // The error is dropped by ValueOrDefault, so it returns to the pool
+        Assert.That(err.message, Is.Empty);
+    }
+    [Test]
     public void ReturnedErrorKeepsCausedByChainTest()
     {
         var root = Err.New(TestErrKind.LowLevel, "root");

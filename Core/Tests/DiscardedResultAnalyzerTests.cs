@@ -43,6 +43,11 @@ public static class Helper
     public static void Handle(Result<MyErr> result) => result.Dispose();
     public static void HandleInt(Result<int, MyErr> result) => result.Dispose();
 }
+
+public static class ResultExtensions
+{
+    public static void Release(this Result<MyErr> result) => result.Dispose();
+}
 ";
 
     private const string uni_task_prelude = @"
@@ -127,10 +132,29 @@ public static class UniHelper
     [Test]
     public void ReportsInspectionOnlyTest()
     {
-        // Reading isOK / calling Unwrap() does not consume the Result
-        var diagnostics = Run(Source("Helper.DoWork().Unwrap();\nif (!Helper.DoWork().isOK) { }"));
+        // Reading isOK / err / value does not consume the Result; calling its methods does
+        var diagnostics = Run(Source("if (!Helper.DoWork().isOK) { }"));
 
-        AssertIds(diagnostics, "PERR100", "PERR100");
+        AssertIds(diagnostics, "PERR100");
+    }
+
+    [Test]
+    public void ReportsToStringOnlyTest()
+    {
+        // ToString() is inspection as well
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.ToString();"));
+
+        AssertIds(diagnostics, "PERR101");
+    }
+
+    [Test]
+    public void ReportsSingleOutTryGetValueTest()
+    {
+        // Union pattern matching calls the single-out overloads once per pattern, so they cannot
+        // take the Result over
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.TryGetValue(out Err<MyErr> error);"));
+
+        AssertIds(diagnostics, "PERR101");
     }
 
     [Test]
@@ -174,13 +198,7 @@ public static class UniHelper
         AssertIds(diagnostics, "PERR101");
     }
 
-    [Test]
-    public void ReportsLocalUnwrappedTest()
-    {
-        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.Unwrap();"));
 
-        AssertIds(diagnostics, "PERR101");
-    }
 
     [Test]
     public void ReportsLocalErrorReadOnlyTest()
@@ -402,9 +420,10 @@ else
     }
 
     [Test]
-    public void IgnoresExtractedAndDisposedTest()
+    public void ReportsExtractedAndDisposedTest()
     {
-        // The shape the README uses: extract, release on success, hand the error on when failed
+        // The two-out TryGetValue already takes the value and the error out, so disposing afterwards
+        // hands the same error back a second time
         var diagnostics = Run(Source(@"
 var result = Helper.DoWorkValue();
 if (result.TryGetValue(out var value, out var err))
@@ -417,7 +436,7 @@ else
     err.Dispose();
 }"));
 
-        AssertIds(diagnostics);
+        AssertIds(diagnostics, "PERR102");
     }
     [Test]
     public void IgnoresConsumedInSeparateBranchesTest()
@@ -627,6 +646,42 @@ public static class Subject
         AssertIds(diagnostics);
     }
 
+    [Test]
+    public void IgnoresUnwrappedLocalTest()
+    {
+        // Unwrap() takes the Result over: it returns the value or panics with the whole error
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.Unwrap();"));
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresHandledByResultMethodsTest()
+    {
+        var diagnostics = Run(Source(@"
+var matched = Helper.DoWorkValue();
+matched.Match(value => value, err => 0);
+
+var switched = Helper.DoWork();
+switched.Switch(() => { }, err => { });
+
+var defaulted = Helper.DoWorkValue();
+defaulted.ValueOrDefault(0);
+
+var mapped = Helper.DoWorkValue();
+Helper.HandleInt(mapped.Map(value => value));
+"));
+
+        AssertIds(diagnostics);
+    }
+
+    [Test]
+    public void IgnoresExtensionMethodTest()
+    {
+        var diagnostics = Run(Source("var result = Helper.DoWork();\nresult.Release();"));
+
+        AssertIds(diagnostics);
+    }
     [Test]
     public void IgnoresDisposedTest()
     {

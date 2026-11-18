@@ -29,6 +29,7 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
     /// <summary>
     /// State of the Result, succeeded or failed. When failed, err is always non-null
     /// </summary>
+    [Obsolete("Don't use isOK directly.")]
     public bool isOK => err == null; // Zero-constructible struct: no isOK field, so illegal states cannot exist
 
     // The rent the error belongs to: a copy of this struct must not return an error that has already
@@ -78,9 +79,17 @@ public readonly struct Result<TErrKind> : Result<TErrKind>.IUnionMembers, IDispo
     /// Asserts that the Result succeeded. Invokes <see cref="ErrBase.Panic"/> when it did not
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
+    /// <remarks>This call takes the Result over: the error is returned to the pool before the panic is thrown</remarks>
     public void Unwrap()
     {
-        if (!isOK) throw err!.Panic(); // When !isOK, err is always non-null
+        if (isOK)
+        {
+            return;
+        }
+
+        var panic = err!.Panic(); // When !isOK, err is always non-null
+        Dispose(); // The panic already holds the full error text, so the instance can go back
+        throw panic;
     }
 
     /// <summary>
@@ -169,6 +178,7 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
 
     /// <summary>State of the Result, succeeded or failed. When failed, err is always non-null</summary>
     // Structs are always zero-constructible, so no separate isOK field is used, to prevent illegal states
+    [Obsolete("Don't use isOK directly.")]
     public bool isOK => err == null;
 
     // The rent the error belongs to: a copy of this struct must not return an error that has already
@@ -261,16 +271,35 @@ public readonly struct Result<T, TErrKind> : Result<T, TErrKind>.IUnionMembers, 
     /// and invokes <see cref="ErrBase.Panic"/> when it did not succeed
     /// </summary>
     /// <exception cref="ManualPanicException">Thrown when called on a failed Result</exception>
-    public T Unwrap() => isOK
-        ? value
-        : throw err!.Panic(); // When !isOK, err is always non-null
+    /// <remarks>This call takes the Result over: the error is returned to the pool before the panic is thrown</remarks>
+    public T Unwrap()
+    {
+        if (isOK)
+        {
+            return value;
+        }
+
+        var panic = err!.Panic(); // When !isOK, err is always non-null
+        Dispose(); // The panic already holds the full error text, so the instance can go back
+        throw panic;
+    }
 
     /// <summary>
     /// Returns the value when the Result succeeded, otherwise returns the default value
     /// </summary>
     /// <param name="default">Value used when the Result failed</param>
+    /// <remarks>This call takes the Result over: the error is dropped, so it is returned to the pool</remarks>
     [return: MaybeNull]
-    public T ValueOrDefault([AllowNull] T @default = default) => isOK ? value : @default;
+    public T ValueOrDefault([AllowNull] T @default = default)
+    {
+        if (isOK)
+        {
+            return value;
+        }
+
+        Dispose();
+        return @default;
+    }
 
     /// <summary>
     /// Returns the value when the Result succeeded; otherwise calls the given function to handle

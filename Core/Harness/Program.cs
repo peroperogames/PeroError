@@ -17,7 +17,7 @@ Console.WriteLine();
 // // The companion class remains Err<TKind>, and it can participate normally in Result / Wrap / AddNote.
 Result<string, IoErr> result = notFound;
 Console.WriteLine($"result  = {result}");
-Console.WriteLine($"isOK    = {result.isOK}");
+Console.WriteLine($"isOK    = {result.TryGetValue(out string? _)}");
 Console.WriteLine();
 
 var wrapped = IoErr_Timeout.New("/tmp/b.txt", 3.0, causedBy: notFound);

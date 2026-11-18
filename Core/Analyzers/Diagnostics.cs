@@ -18,7 +18,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor unconsumedResult = new(
         id: "PERR100",
         title: "Result is not consumed",
-        messageFormat: "The Result returned by '{0}' is never consumed; dispose it (using / Dispose()), return it, pass it to another method, or wrap its error with Err.Wrap",
+        messageFormat: "The Result returned by '{0}' is never consumed; dispose it (using / Dispose()), return it, pass it to another method, call one of its methods, or hand its error over",
         category: category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
@@ -29,18 +29,18 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor unconsumedResultVariable = new(
         id: "PERR101",
         title: "Variable holding a Result is never consumed",
-        messageFormat: "Variable '{0}' holds a Result that is never disposed, returned, passed on or wrapped",
+        messageFormat: "Variable '{0}' holds a Result that is never disposed, returned, passed on, handled by one of its methods or wrapped",
         category: category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "Reading isOK / err / value or calling Unwrap() / Match() / Switch() does not consume a Result; "
+        description: "Reading isOK / err / value does not consume a Result; "
                      + "the value still has to be disposed, returned, passed on, or have its error wrapped.");
 
     /// <summary>A Result passed in as a parameter is never consumed</summary>
     public static readonly DiagnosticDescriptor unconsumedResultParameter = new(
         id: "PERR103",
         title: "Parameter holding a Result is never consumed",
-        messageFormat: "Parameter '{0}' holds a Result that is never disposed, returned, passed on or wrapped",
+        messageFormat: "Parameter '{0}' holds a Result that is never disposed, returned, passed on, handled by one of its methods or wrapped",
         category: category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
